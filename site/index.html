@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recipe Viewer</title>
+  <link id="emi-style" rel="stylesheet" href="/lib/emi.min.css">
+  <link rel="stylesheet" href="/styles.css?v=20">
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="site-brand" href="/" title="Recipe Viewer home">
+        <span class="site-name">Recipe Viewer</span>
+      </a>
+
+      <div class="site-search">
+        <label class="site-search-field">
+          <span class="site-search-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="8.5" cy="8.5" r="5.25" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M12.5 12.5L17 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <input id="filter-input" type="search" placeholder="Filter…" autocomplete="off" class="site-search-input">
+        </label>
+      </div>
+
+      <div class="site-header-actions">
+        <label class="header-control header-control--locale">
+          <span class="header-control-label">lang:</span>
+          <select id="locale-select" class="header-select" aria-label="Language"></select>
+        </label>
+        <label class="header-control header-control--bundle">
+          <span class="header-control-label">bundle:</span>
+          <select id="bundle-select" class="header-select" aria-label="Export bundle"></select>
+        </label>
+      </div>
+    </div>
+    <p id="demo-error" class="demo-error" hidden></p>
+  </header>
+
+  <main class="demo-main">
+    <section id="panel-items" class="demo-panel" hidden data-panel="items">
+      <div id="item-grid" class="item-grid"></div>
+      <nav id="item-pager" class="list-pager" aria-label="Items pagination"></nav>
+    </section>
+
+    <section id="panel-item-detail" class="demo-panel" hidden data-panel="item-detail">
+      <header id="item-detail-header" class="item-detail-header"></header>
+      <nav class="detail-tabs" aria-label="Item recipe tabs">
+        <button type="button" id="detail-tab-recipes" class="detail-tab" data-detail-tab="recipes">Recipes</button>
+        <button type="button" id="detail-tab-uses" class="detail-tab" data-detail-tab="uses">Uses</button>
+        <button type="button" id="detail-tab-tags" class="detail-tab" data-detail-tab="tags">Tags</button>
+      </nav>
+      <section id="detail-panel-recipes" class="detail-panel">
+        <div id="item-recipes" class="recipe-grid recipe-grid-compact"></div>
+        <p id="item-recipes-empty" class="demo-empty" hidden>No recipes produce this item.</p>
+      </section>
+      <section id="detail-panel-uses" class="detail-panel" hidden>
+        <div id="item-uses" class="recipe-grid recipe-grid-compact"></div>
+        <p id="item-uses-empty" class="demo-empty" hidden>No recipes use this item as input.</p>
+      </section>
+      <section id="detail-panel-tags" class="detail-panel" hidden>
+        <div id="item-tags-list" class="item-tags-list"></div>
+        <p id="item-tags-empty" class="demo-empty" hidden>No tags for this item.</p>
+      </section>
+    </section>
+
+    <section id="panel-tag-detail" class="demo-panel" hidden data-panel="tag-detail">
+      <header id="tag-detail-header" class="item-detail-header item-detail-header--tag"></header>
+      <div id="tag-members" class="item-grid"></div>
+      <p id="tag-members-empty" class="demo-empty" hidden>No members found for this tag.</p>
+      <nav id="tag-pager" class="list-pager" aria-label="Tag members pagination"></nav>
+    </section>
+
+    <section id="panel-recipe-detail" class="demo-panel" hidden data-panel="recipe-detail">
+      <div class="item-detail-toolbar">
+        <button type="button" id="btn-back-items-from-recipe" class="demo-back">← Items</button>
+      </div>
+      <header id="recipe-detail-header" class="item-detail-header"></header>
+      <div id="recipe-single" class="recipe-grid recipe-grid-compact"></div>
+      <p id="recipe-single-empty" class="demo-empty" hidden>Recipe layout not found.</p>
+    </section>
+  </main>
+
+  <div id="tooltip"></div>
+  <div id="tag-popover" class="tag-popover" hidden>
+    <div class="tag-popover-panel" role="dialog" aria-modal="true">
+      <div class="tag-popover-header"></div>
+      <div class="tag-popover-stage-wrap"></div>
+      <div class="tag-popover-footer"></div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const params = new URLSearchParams(location.search);
+      const isDevMode = params.get('dev') === '1';
+      const shouldUseCdn = params.get('cdn') === 'jsdelivr' || params.get('cdn') === '1';
+      const emiVersion = params.get('emiVersion') || '0.2.1';
+      const rendererJsFile = isDevMode ? 'emi.js' : 'emi.min.js';
+      const rendererCssFile = isDevMode ? 'emi.css' : 'emi.min.css';
+      const script = document.createElement('script');
+      const styleLink = document.getElementById('emi-style');
+
+      if (shouldUseCdn) {
+        const cdnRoot = 'https://cdn.jsdelivr.net/npm/emi-recipe-renderer@' + emiVersion + '/dist';
+        script.src = cdnRoot + '/' + rendererJsFile;
+        styleLink.href = cdnRoot + '/' + rendererCssFile;
+      } else {
+        script.src = '/lib/' + rendererJsFile;
+        styleLink.href = '/lib/' + rendererCssFile;
+      }
+      script.onerror = function () {
+        document.body.insertAdjacentHTML('beforeend',
+          '<p style="color:#f88;padding:1rem">Failed to load emi-recipe-renderer. Run <code>npm install</code> (or use <code>?cdn=jsdelivr</code> after publish).</p>');
+      };
+      script.onload = function () {
+        if (!globalThis.EmiRecipeRenderer) {
+          document.body.insertAdjacentHTML('beforeend',
+            '<p style="color:#f88;padding:1rem">EmiRecipeRenderer missing after script load.</p>');
+          return;
+        }
+        const boot = document.createElement('script');
+        boot.src = '/app.js';
+        document.body.appendChild(boot);
+      };
+      document.body.appendChild(script);
+    })();
+  </script>
+</body>
+</html>

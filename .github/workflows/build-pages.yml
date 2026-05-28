@@ -1,0 +1,304 @@
+name: Build and deploy Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      mwe_ref:
+        description: minecraft-web-export git ref (tag or branch)
+        required: false
+        default: v0.2.0
+      modpack_tag:
+        description: Modpack-Modern semver tag (empty = latest release)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  RUNNER_HOME: /home/runner
+  JAVA_VERSION: "17"
+  MC_VERSION: "1.20.1"
+  MC_ASSET_INDEX: "5"
+  FORGE_BUILD: "47.4.13"
+  HMC_VERSION: "2.9.0"
+  MODPACK_DIR: Modpack-Modern
+  MWE_REF: v0.2.0
+  OPTIMIZE_REF: v0.2.0
+  EXPORT_RAW: ${{ github.workspace }}/export-raw
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout viewer
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Checkout Modpack-Modern at latest release tag
+        id: modpack
+        env:
+          MODPACK_TAG: ${{ github.event.inputs.modpack_tag }}
+        run: |
+          chmod +x scripts/checkout-modpack-latest-release.sh
+          if [ -n "${MODPACK_TAG:-}" ]; then
+            export MODPACK_TAG
+          fi
+          bash scripts/checkout-modpack-latest-release.sh
+
+      - name: Log modpack version
+        run: echo "Modpack-Modern @ ${{ steps.modpack.outputs.modpack_tag }}"
+
+      - name: Set bundle id
+        id: bundle
+        run: |
+          id="tfg-${{ steps.modpack.outputs.modpack_tag }}-opt"
+          echo "bundle_id=$id" >> "$GITHUB_OUTPUT"
+          echo "export_opt=${{ github.workspace }}/site/bundles/$id" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+
+      - name: Install xvfb + OpenGL + OpenAL Soft
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            xvfb x11-xserver-utils \
+            libgl1 libgl1-mesa-dri \
+            libopenal1
+
+      - name: Restore pakku-fetched mods
+        id: pakku-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            Modpack-Modern/mods
+            Modpack-Modern/resourcepacks
+            Modpack-Modern/shaderpacks
+          key: pakku-${{ hashFiles('Modpack-Modern/pakku-lock.json') }}
+          restore-keys: |
+            pakku-
+
+      - name: Fetch modpack mods (cache miss only)
+        if: steps.pakku-restore.outputs.cache-hit != 'true'
+        working-directory: Modpack-Modern
+        run: java -jar pakku.jar fetch
+
+      - name: Save pakku cache (exact-key miss only)
+        if: steps.pakku-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            Modpack-Modern/mods
+            Modpack-Modern/resourcepacks
+            Modpack-Modern/shaderpacks
+          key: ${{ steps.pakku-restore.outputs.cache-primary-key }}
+
+      - name: Checkout minecraft-web-export
+        uses: actions/checkout@v4
+        with:
+          repository: jmecn/minecraft-web-export
+          ref: ${{ github.event.inputs.mwe_ref || env.MWE_REF }}
+          path: minecraft-web-export
+
+      - name: Restore Gradle caches (minecraft-web-export)
+        id: mwe-gradle-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ env.RUNNER_HOME }}/.gradle/caches
+            ${{ env.RUNNER_HOME }}/.gradle/wrapper
+          key: mwe-gradle-${{ hashFiles('minecraft-web-export/**/*.gradle', 'minecraft-web-export/gradle.properties', 'minecraft-web-export/gradle/wrapper/**') }}
+          restore-keys: |
+            mwe-gradle-
+
+      - name: Build minecraft-web-export jar
+        working-directory: minecraft-web-export
+        run: chmod +x gradlew && ./gradlew jar --no-daemon --parallel --build-cache
+
+      - name: Save Gradle caches (minecraft-web-export)
+        if: steps.mwe-gradle-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ env.RUNNER_HOME }}/.gradle/caches
+            ${{ env.RUNNER_HOME }}/.gradle/wrapper
+          key: ${{ steps.mwe-gradle-restore.outputs.cache-primary-key }}
+
+      - name: Checkout emi-bundle-optimize
+        uses: actions/checkout@v4
+        with:
+          repository: jmecn/emi-bundle-optimize
+          ref: ${{ env.OPTIMIZE_REF }}
+          path: emi-bundle-optimize
+
+      - name: Install minecraft-web-export into modpack
+        run: |
+          set -e
+          mp="${{ env.MODPACK_DIR }}"
+          mkdir -p "$mp/mods"
+          find "$mp/mods" -maxdepth 1 -name 'minecraft-web-export*.jar' -delete
+          find "$mp/mods" -maxdepth 1 -name 'field-guide*.jar' -delete
+          jar=$(ls minecraft-web-export/build/libs/minecraft-web-export-*.jar | head -1)
+          if [ -z "$jar" ]; then
+            echo "::error::No minecraft-web-export jar"
+            exit 1
+          fi
+          cp -v "$jar" "$mp/mods/"
+
+          cp="$mp/config/craftpresence.json"
+          if [ -f "$cp" ]; then
+            python3 - "$cp" <<'PY'
+          import json, sys
+          path = sys.argv[1]
+          with open(path) as f:
+              cfg = json.load(f)
+          cfg.setdefault("displaySettings", {}).setdefault("presenceData", {})["enabled"] = False
+          cfg.setdefault("advancedSettings", {})["maxConnectionAttempts"] = 1
+          with open(path, "w") as f:
+              json.dump(cfg, f, indent=2)
+          PY
+          fi
+
+      - name: Restore HeadlessMC .minecraft
+        id: hmc-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.RUNNER_HOME }}/.minecraft
+          key: hmc-${{ env.MC_VERSION }}-forge-${{ env.FORGE_BUILD }}
+          restore-keys: |
+            hmc-${{ env.MC_VERSION }}-forge-
+            hmc-${{ env.MC_VERSION }}-
+
+      - name: Restore emi-export save
+        id: emi-save-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.MODPACK_DIR }}/saves/emi-export
+          key: emi-export-${{ env.MC_VERSION }}-${{ hashFiles('Modpack-Modern/pakku-lock.json') }}
+          restore-keys: |
+            emi-export-${{ env.MC_VERSION }}-
+
+      - name: Download HeadlessMC launcher
+        uses: robinraju/release-downloader@v1.11
+        with:
+          repository: 3arthqu4ke/headlessmc
+          tag: ${{ env.HMC_VERSION }}
+          fileName: headlessmc-launcher-${{ env.HMC_VERSION }}.jar
+
+      - name: Setup HeadlessMC
+        run: |
+          set -e
+          mkdir -p HeadlessMC
+          cat > HeadlessMC/config.properties <<EOF
+          hmc.java.versions=$JAVA_HOME/bin/java
+          hmc.gamedir=$GITHUB_WORKSPACE/${{ env.MODPACK_DIR }}
+          hmc.offline=true
+          hmc.rethrow.launch.exceptions=true
+          hmc.exit.on.failed.command=true
+          EOF
+          mc_ver="${{ env.MC_VERSION }}"
+          forge="${{ env.FORGE_BUILD }}"
+          if [ ! -f "$HOME/.minecraft/versions/$mc_ver/$mc_ver.json" ]; then
+            java -jar "headlessmc-launcher-${{ env.HMC_VERSION }}.jar" --command "download $mc_ver"
+          fi
+          if ! ls "$HOME/.minecraft/versions" 2>/dev/null | grep -q "$forge"; then
+            java -jar "headlessmc-launcher-${{ env.HMC_VERSION }}.jar" --command "forge $mc_ver --uid $forge"
+          fi
+
+      - name: Launch modpack under xvfb (EMI export, then exit)
+        env:
+          ALSOFT_DRIVERS: "null"
+          MWE_JVM_FLAGS: >-
+            -Djava.awt.headless=false
+            -Dmodernfix.config.mixin.feature.integrated_server_watchdog=false
+            -DminecraftWebExport.export.enabled=true
+            -DminecraftWebExport.runExportAndExit=true
+            -DminecraftWebExport.export.outputDir=${{ env.EXPORT_RAW }}
+            -DminecraftWebExport.exportWarmupTicks=2400
+            -DminecraftWebExport.exportTimeoutSeconds=7200
+        run: |
+          set -e
+          mp="${{ env.MODPACK_DIR }}"
+          mkdir -p "$mp/config" "$mp/saves" "${{ env.EXPORT_RAW }}"
+          cat > "$mp/options.txt" <<EOF
+          onboardAccessibility:false
+          pauseOnLostFocus:false
+          EOF
+          xvfb-run -a java \
+            -Dhmc.check.xvfb=true \
+            -jar "headlessmc-launcher-${{ env.HMC_VERSION }}.jar" \
+            --command "launch .*forge.* -regex --jvm \"${MWE_JVM_FLAGS}\""
+
+      - name: Verify raw EMI export
+        run: test -f "${{ env.EXPORT_RAW }}/bundle.json"
+
+      - name: Optimize bundle
+        run: |
+          node emi-bundle-optimize/bin/cli.mjs optimize \
+            --in "${{ env.EXPORT_RAW }}" \
+            --out "${{ steps.bundle.outputs.export_opt }}" \
+            --force \
+            --prune-lang
+
+      - name: Save emi-export world cache
+        if: success() && steps.emi-save-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.MODPACK_DIR }}/saves/emi-export
+          key: ${{ steps.emi-save-restore.outputs.cache-primary-key }}
+
+      - name: Save HeadlessMC .minecraft
+        if: success() && steps.hmc-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.RUNNER_HOME }}/.minecraft
+          key: ${{ steps.hmc-restore.outputs.cache-primary-key }}
+
+      - name: Assemble static site
+        run: |
+          npm ci
+          npm run copy -- --id "${{ steps.bundle.outputs.bundle_id }}" "${{ steps.bundle.outputs.export_opt }}"
+          npm run validate
+
+      - name: Upload raw export on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-raw-debug
+          path: |
+            export-raw/**
+            Modpack-Modern/logs/**
+            Modpack-Modern/crash-reports/**
+          if-no-files-found: ignore
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
