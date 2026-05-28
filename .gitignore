@@ -3,4 +3,5 @@ site/lib/
 site/bundles/**
 !site/bundles/.gitkeep
 export-raw/
+export-opt/
 .DS_Store

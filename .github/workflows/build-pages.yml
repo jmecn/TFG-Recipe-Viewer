@@ -49,6 +49,8 @@ env:
   EXPORT_RAW: ${{ github.workspace }}/export-raw
   # EMI bundle root (bundle.json lives here, not under export-raw/)
   EXPORT_BUNDLE: ${{ github.workspace }}/export-raw/emi
+  # Staging dir for optimize; install-bundle copy moves this into site/bundles/<id>
+  EXPORT_OPT_STAGING: ${{ github.workspace }}/export-opt
 
 jobs:
   build:
@@ -77,9 +79,8 @@ jobs:
       - name: Set bundle id
         id: bundle
         run: |
-          id="tfg-${{ steps.modpack.outputs.modpack_tag }}-opt"
+          id="tfg-${{ steps.modpack.outputs.modpack_tag }}"
           echo "bundle_id=$id" >> "$GITHUB_OUTPUT"
-          echo "export_opt=${{ github.workspace }}/site/bundles/$id" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         with:
@@ -266,7 +267,7 @@ jobs:
           npm ci
           node bin/cli.mjs optimize \
             --in "${{ env.EXPORT_BUNDLE }}" \
-            --out "${{ steps.bundle.outputs.export_opt }}" \
+            --out "${{ env.EXPORT_OPT_STAGING }}" \
             --force \
             --prune-lang
 
@@ -290,7 +291,7 @@ jobs:
         run: |
           npm pkg set "dependencies.emi-recipe-renderer=${RENDERER_VER}"
           npm install
-          npm run copy -- --id "${{ steps.bundle.outputs.bundle_id }}" "${{ steps.bundle.outputs.export_opt }}"
+          npm run copy -- --id "${{ steps.bundle.outputs.bundle_id }}" "${{ env.EXPORT_OPT_STAGING }}"
           npm run validate
 
       - name: Upload raw export on failure

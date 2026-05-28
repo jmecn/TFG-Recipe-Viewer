@@ -13,9 +13,9 @@
 import {
   cpSync,
   existsSync,
-  lstatSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -66,6 +66,19 @@ function mergeBundleId(cfg, id) {
   writeBundlesConfig(cfg);
 }
 
+/** True when source and dest are the same bundle dir (avoids rm+copy deleting in-place exports). */
+function sameBundleDir(sourceDir, destDir) {
+  const src = path.resolve(sourceDir);
+  const dst = path.resolve(destDir);
+  if (src === dst) return true;
+  if (!existsSync(dst)) return false;
+  try {
+    return realpathSync(src) === realpathSync(dst);
+  } catch {
+    return false;
+  }
+}
+
 const args = process.argv.slice(2);
 const op = args[0];
 if (op !== 'link' && op !== 'copy') {
@@ -103,6 +116,15 @@ if (!existsSync(path.join(absSource, 'bundle.json'))) {
 mkdirSync(bundlesDir, { recursive: true });
 const dest = path.join(bundlesDir, id);
 
+const cfg = readBundlesConfig();
+mergeBundleId(cfg, id);
+
+if (sameBundleDir(absSource, dest)) {
+  console.log(`OK: bundle "${id}" already at site/bundles/${id} (same path, skipped ${op})`);
+  console.log(`Updated: site/bundles.json`);
+  process.exit(0);
+}
+
 if (existsSync(dest)) {
   rmSync(dest, { recursive: true, force: true });
 }
@@ -121,9 +143,6 @@ if (op === 'link') {
 } else {
   cpSync(absSource, dest, { recursive: true });
 }
-
-const cfg = readBundlesConfig();
-mergeBundleId(cfg, id);
 
 console.log(`OK: ${op} bundle "${id}" -> site/bundles/${id}`);
 console.log(`Updated: site/bundles.json`);

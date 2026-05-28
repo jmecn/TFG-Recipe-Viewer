@@ -8,7 +8,7 @@ TerraFirmaGreg Modern 配方静态浏览站：由 GitHub Actions 从 [Modpack-Mo
 
 ```bash
 npm install
-npm run copy -- --id tfg-0.12.8-opt /path/to/optimized-bundle
+npm run copy -- --id tfg-0.12.8 /path/to/optimized-bundle
 npm start
 ```
 
@@ -28,7 +28,7 @@ npm start
 
 1. Modpack-Modern 最新 semver tag → `pakku fetch`
 2. GitHub Release jar → HeadlessMC + xvfb 全量 EMI 导出
-3. checkout `emi-bundle-optimize@master` 优化 → `site/bundles/tfg-<tag>-opt/`
+3. checkout `emi-bundle-optimize@master` 优化 → `site/bundles/tfg-<tag>/`
 4. npm 上的 `emi-recipe-renderer` 同步到 `site/lib/`，部署 `site/` 到 GitHub Pages
 
 ### 手动触发
@@ -37,7 +37,7 @@ Actions → **Build and deploy Pages** → **Run workflow**
 
 ## 路由
 
-全部使用 query 参数（`?bundle=tfg-0.12.8-opt&lang=zh_cn` 等），适合 GitHub Pages，无需 path 重写。
+全部使用 query 参数（`?bundle=tfg-0.12.8&lang=zh_cn` 等），适合 GitHub Pages，无需 path 重写。
 
 ## 相关仓库
 
