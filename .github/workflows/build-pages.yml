@@ -8,7 +8,7 @@ on:
       mwe_version:
         description: minecraft-web-export release tag
         required: false
-        default: "v0.2.1"
+        default: "v0.2.2"
       renderer_version:
         description: emi-recipe-renderer npm version
         required: false
@@ -24,7 +24,7 @@ on:
       export_warmup_ticks:
         description: Ticks after EMI is ready before export (20 TPS; 100 ≈ 5s)
         required: false
-        default: "100"
+        default: "40"
 
 permissions:
   contents: read
@@ -43,10 +43,12 @@ env:
   FORGE_BUILD: "47.4.13"
   HMC_VERSION: "2.9.0"
   MODPACK_DIR: Modpack-Modern
-  MWE_VERSION: v0.2.1
+  MWE_VERSION: v0.2.2
   RENDERER_VERSION: "0.2.1"
   OPTIMIZE_REF: master
   EXPORT_RAW: ${{ github.workspace }}/export-raw
+  # EMI bundle root (bundle.json lives here, not under export-raw/)
+  EXPORT_BUNDLE: ${{ github.workspace }}/export-raw/emi
 
 jobs:
   build:
@@ -214,7 +216,7 @@ jobs:
       - name: Launch modpack under xvfb (EMI export, then exit)
         env:
           ALSOFT_DRIVERS: "null"
-          EXPORT_WARMUP: ${{ github.event.inputs.export_warmup_ticks || '100' }}
+          EXPORT_WARMUP: ${{ github.event.inputs.export_warmup_ticks || '40' }}
           MWE_JVM_FLAGS: >-
             -Xmx12G
             -Xms4G
@@ -240,7 +242,9 @@ jobs:
             --command "launch .*forge.* -regex --jvm \"${MWE_JVM_FLAGS}\""
 
       - name: Verify raw EMI export
-        run: test -f "${{ env.EXPORT_RAW }}/bundle.json"
+        run: |
+          test -f "${{ env.EXPORT_BUNDLE }}/bundle.json"
+          test -f "${{ env.EXPORT_BUNDLE }}/recipes/index.json"
 
       - name: Checkout emi-bundle-optimize
         uses: actions/checkout@v4
@@ -261,7 +265,7 @@ jobs:
         run: |
           npm ci
           node bin/cli.mjs optimize \
-            --in "${{ env.EXPORT_RAW }}" \
+            --in "${{ env.EXPORT_BUNDLE }}" \
             --out "${{ steps.bundle.outputs.export_opt }}" \
             --force \
             --prune-lang
