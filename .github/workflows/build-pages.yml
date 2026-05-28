@@ -6,21 +6,25 @@ on:
   workflow_dispatch:
     inputs:
       mwe_version:
-        description: minecraft-web-export release tag (e.g. v0.2.0)
+        description: minecraft-web-export release tag
         required: false
-        default: v0.2.0
+        default: "v0.2.1"
       renderer_version:
-        description: emi-recipe-renderer npm version (e.g. 0.2.1)
+        description: emi-recipe-renderer npm version
         required: false
         default: "0.2.1"
       optimize_ref:
-        description: emi-bundle-optimize git branch or commit (repo has no release tags yet)
+        description: emi-bundle-optimize git branch or commit
         required: false
         default: master
       modpack_tag:
         description: Modpack-Modern semver tag (empty = latest release)
         required: false
         default: ""
+      export_warmup_ticks:
+        description: Ticks after EMI is ready before export (20 TPS; 100 ≈ 5s)
+        required: false
+        default: "100"
 
 permissions:
   contents: read
@@ -39,7 +43,7 @@ env:
   FORGE_BUILD: "47.4.13"
   HMC_VERSION: "2.9.0"
   MODPACK_DIR: Modpack-Modern
-  MWE_VERSION: v0.2.0
+  MWE_VERSION: v0.2.1
   RENDERER_VERSION: "0.2.1"
   OPTIMIZE_REF: master
   EXPORT_RAW: ${{ github.workspace }}/export-raw
@@ -210,13 +214,17 @@ jobs:
       - name: Launch modpack under xvfb (EMI export, then exit)
         env:
           ALSOFT_DRIVERS: "null"
+          EXPORT_WARMUP: ${{ github.event.inputs.export_warmup_ticks || '100' }}
           MWE_JVM_FLAGS: >-
+            -Xmx12G
+            -Xms4G
+            -XX:+UseG1GC
             -Djava.awt.headless=false
             -Dmodernfix.config.mixin.feature.integrated_server_watchdog=false
             -DminecraftWebExport.export.enabled=true
             -DminecraftWebExport.runExportAndExit=true
             -DminecraftWebExport.export.outputDir=${{ env.EXPORT_RAW }}
-            -DminecraftWebExport.exportWarmupTicks=2400
+            -DminecraftWebExport.exportWarmupTicks=${{ env.EXPORT_WARMUP }}
             -DminecraftWebExport.exportTimeoutSeconds=7200
         run: |
           set -e
