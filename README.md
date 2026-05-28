@@ -14,16 +14,22 @@ npm start
 
 ## CI 前置
 
-推送 [minecraft-web-export](https://github.com/jmecn/minecraft-web-export) 的 **v0.2.0**（含 `runExportAndExit` CI 驱动）后再跑本仓库 workflow；手动触发时可指定 `mwe_ref` 为 `main` 或 commit SHA。
+| 依赖 | 发布物 | CI 获取方式 |
+|------|--------|-------------|
+| [minecraft-web-export](https://github.com/jmecn/minecraft-web-export) | GitHub Release **jar** | 按 tag 下载（如 `v0.2.0` → `minecraft-web-export-0.2.0.jar`） |
+| [emi-recipe-renderer](https://github.com/jmecn/emi-recipe-renderer) | **npm** 包（含预编译 `dist/`） | `npm install emi-recipe-renderer@0.2.1`，不编译 |
+| [emi-bundle-optimize](https://github.com/jmecn/emi-bundle-optimize) | 源码（**无 tag**） | checkout `master`（或 commit SHA），`npm ci` 后跑 CLI |
+
+`emi-recipe-renderer` 在仓库发 GitHub Release 时会同步发布到 npm（见该仓库 `npm-publish` workflow）；Pages CI 只消费 npm 上的构建产物。
 
 ## CI 流水线
 
 见 [.github/workflows/build-pages.yml](.github/workflows/build-pages.yml)。概要：
 
 1. Modpack-Modern 最新 semver tag → `pakku fetch`
-2. 构建 [minecraft-web-export](https://github.com/jmecn/minecraft-web-export) `v0.2.0+`，HeadlessMC + xvfb 全量 EMI 导出
-3. `emi-bundle-optimize` → `site/bundles/tfg-<tag>-opt/`
-4. 部署 `site/` 到 GitHub Pages
+2. GitHub Release jar → HeadlessMC + xvfb 全量 EMI 导出
+3. checkout `emi-bundle-optimize@master` 优化 → `site/bundles/tfg-<tag>-opt/`
+4. npm 上的 `emi-recipe-renderer` 同步到 `site/lib/`，部署 `site/` 到 GitHub Pages
 
 ### 手动触发
 

@@ -5,10 +5,18 @@ on:
     branches: ["main"]
   workflow_dispatch:
     inputs:
-      mwe_ref:
-        description: minecraft-web-export git ref (tag or branch)
+      mwe_version:
+        description: minecraft-web-export release tag (e.g. v0.2.0)
         required: false
         default: v0.2.0
+      renderer_version:
+        description: emi-recipe-renderer npm version (e.g. 0.2.1)
+        required: false
+        default: "0.2.1"
+      optimize_ref:
+        description: emi-bundle-optimize git branch or commit (repo has no release tags yet)
+        required: false
+        default: master
       modpack_tag:
         description: Modpack-Modern semver tag (empty = latest release)
         required: false
@@ -31,8 +39,9 @@ env:
   FORGE_BUILD: "47.4.13"
   HMC_VERSION: "2.9.0"
   MODPACK_DIR: Modpack-Modern
-  MWE_REF: v0.2.0
-  OPTIMIZE_REF: v0.2.0
+  MWE_VERSION: v0.2.0
+  RENDERER_VERSION: "0.2.1"
+  OPTIMIZE_REF: master
   EXPORT_RAW: ${{ github.workspace }}/export-raw
 
 jobs:
@@ -106,43 +115,23 @@ jobs:
             Modpack-Modern/shaderpacks
           key: ${{ steps.pakku-restore.outputs.cache-primary-key }}
 
-      - name: Checkout minecraft-web-export
-        uses: actions/checkout@v4
+      - name: Resolve minecraft-web-export release
+        id: mwe
+        env:
+          MWE_TAG: ${{ github.event.inputs.mwe_version || env.MWE_VERSION }}
+        run: |
+          ver="${MWE_TAG#v}"
+          echo "tag=$MWE_TAG" >> "$GITHUB_OUTPUT"
+          echo "jar_name=minecraft-web-export-${ver}.jar" >> "$GITHUB_OUTPUT"
+
+      - name: Download minecraft-web-export jar
+        uses: robinraju/release-downloader@v1.11
         with:
           repository: jmecn/minecraft-web-export
-          ref: ${{ github.event.inputs.mwe_ref || env.MWE_REF }}
-          path: minecraft-web-export
-
-      - name: Restore Gradle caches (minecraft-web-export)
-        id: mwe-gradle-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ${{ env.RUNNER_HOME }}/.gradle/caches
-            ${{ env.RUNNER_HOME }}/.gradle/wrapper
-          key: mwe-gradle-${{ hashFiles('minecraft-web-export/**/*.gradle', 'minecraft-web-export/gradle.properties', 'minecraft-web-export/gradle/wrapper/**') }}
-          restore-keys: |
-            mwe-gradle-
-
-      - name: Build minecraft-web-export jar
-        working-directory: minecraft-web-export
-        run: chmod +x gradlew && ./gradlew jar --no-daemon --parallel --build-cache
-
-      - name: Save Gradle caches (minecraft-web-export)
-        if: steps.mwe-gradle-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ${{ env.RUNNER_HOME }}/.gradle/caches
-            ${{ env.RUNNER_HOME }}/.gradle/wrapper
-          key: ${{ steps.mwe-gradle-restore.outputs.cache-primary-key }}
-
-      - name: Checkout emi-bundle-optimize
-        uses: actions/checkout@v4
-        with:
-          repository: jmecn/emi-bundle-optimize
-          ref: ${{ env.OPTIMIZE_REF }}
-          path: emi-bundle-optimize
+          tag: ${{ steps.mwe.outputs.tag }}
+          fileName: ${{ steps.mwe.outputs.jar_name }}
+          tarBall: false
+          zipBall: false
 
       - name: Install minecraft-web-export into modpack
         run: |
@@ -151,7 +140,7 @@ jobs:
           mkdir -p "$mp/mods"
           find "$mp/mods" -maxdepth 1 -name 'minecraft-web-export*.jar' -delete
           find "$mp/mods" -maxdepth 1 -name 'field-guide*.jar' -delete
-          jar=$(ls minecraft-web-export/build/libs/minecraft-web-export-*.jar | head -1)
+          jar=$(ls minecraft-web-export-*.jar | head -1)
           if [ -z "$jar" ]; then
             echo "::error::No minecraft-web-export jar"
             exit 1
@@ -245,9 +234,25 @@ jobs:
       - name: Verify raw EMI export
         run: test -f "${{ env.EXPORT_RAW }}/bundle.json"
 
+      - name: Checkout emi-bundle-optimize
+        uses: actions/checkout@v4
+        with:
+          repository: jmecn/emi-bundle-optimize
+          ref: ${{ github.event.inputs.optimize_ref || env.OPTIMIZE_REF }}
+          path: emi-bundle-optimize
+
+      - name: Setup Node (emi-bundle-optimize)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: emi-bundle-optimize/package-lock.json
+
       - name: Optimize bundle
+        working-directory: emi-bundle-optimize
         run: |
-          node emi-bundle-optimize/bin/cli.mjs optimize \
+          npm ci
+          node bin/cli.mjs optimize \
             --in "${{ env.EXPORT_RAW }}" \
             --out "${{ steps.bundle.outputs.export_opt }}" \
             --force \
@@ -268,8 +273,11 @@ jobs:
           key: ${{ steps.hmc-restore.outputs.cache-primary-key }}
 
       - name: Assemble static site
+        env:
+          RENDERER_VER: ${{ github.event.inputs.renderer_version || env.RENDERER_VERSION }}
         run: |
-          npm ci
+          npm pkg set "dependencies.emi-recipe-renderer=${RENDERER_VER}"
+          npm install
           npm run copy -- --id "${{ steps.bundle.outputs.bundle_id }}" "${{ steps.bundle.outputs.export_opt }}"
           npm run validate
 
