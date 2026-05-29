@@ -23,5 +23,4 @@ xvfb-run --server-args="-screen 0 1280x720x24" -a java \
   -jar "$launcher" \
   --command "launch .*forge.* -regex --jvm \"${MWE_JVM_FLAGS:?MWE_JVM_FLAGS required}\""
 
-test -f "$EXPORT_BUNDLE/bundle.json"
-test -f "$EXPORT_BUNDLE/recipes/index.json"
+bash "$ROOT/scripts/ci-verify-emi-bundle.sh"
