@@ -19,7 +19,7 @@
 
   function bundleBaseUrl(id) {
     const slug = String(id || '').trim().replace(/^\/+|\/+$/g, '');
-    return `/bundles/${slug}/`;
+    return global.siteUrl(`bundles/${slug}/`);
   }
 
   async function fetchJson(url, fallbackValue) {
@@ -228,7 +228,8 @@
     else if (route.view === 'tag' && route.id) p.set('tag', route.id);
     else if (route.view === 'recipe' && route.id) p.set('recipe', route.id);
     const qs = p.toString();
-    return qs ? `/?${qs}` : '/';
+    const base = global.siteBase();
+    return qs ? `${base}?${qs}` : base;
   }
 
   class RecipeViewer {
@@ -1076,21 +1077,15 @@
   }
 
   async function loadBundleCatalog() {
-    const cfg = await fetchJson('/bundles.json', null);
+    const cfg = await fetchJson(global.siteUrl('bundles.json'), null);
     if (!cfg || !Array.isArray(cfg.bundles) || cfg.bundles.length === 0) {
       throw new Error('bundles.json: bundles must be a non-empty array');
     }
     return cfg;
   }
 
-  function normalizeAppPath() {
-    const path = location.pathname.replace(/\/index\.html$/i, '') || '/';
-    if (path === '/') return;
-    history.replaceState({}, '', `/${location.search}${location.hash}`);
-  }
-
   async function bootVerifier() {
-    normalizeAppPath();
+    global.normalizeSitePath?.();
     const errEl = document.getElementById('demo-error');
     try {
       const catalog = await loadBundleCatalog();

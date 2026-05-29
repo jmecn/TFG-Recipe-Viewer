@@ -169,8 +169,10 @@ jobs:
 
       - name: Install bundle into site
         run: |
+          bash scripts/ci-patch-renderer-version.sh
           npm run copy -- --id "${{ steps.metadata.outputs.bundle_id }}" "${{ env.EXPORT_OPT_STAGING }}"
           npm run validate
+          test -f site/app.js
 
       - name: Build debug — collect
         if: failure()

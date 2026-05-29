@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>404 - recipe-viewer</title>
+  <script src="site-base.js"></script>
   <style>
     :root {
       color-scheme: dark;
@@ -90,13 +91,14 @@
     <p>recipe-viewer 已使用 query 路由，请从首页进入，或使用 `/?bundle=...&item=...` 这类链接。</p>
     <div class="path" id="missing-path"></div>
     <div class="actions">
-      <a class="btn primary" href="/">返回首页</a>
-      <a class="btn" href="/?bundle=_">打开默认 bundle</a>
+      <a class="btn primary" id="home-link" href="#" data-site-home>返回首页</a>
+      <a class="btn" id="default-bundle-link" href="./?bundle=_">打开默认 bundle</a>
     </div>
   </main>
   <script>
     document.getElementById('missing-path').textContent =
       location.pathname + location.search + location.hash;
+    document.getElementById('default-bundle-link').href = siteUrl('?bundle=_');
   </script>
 </body>
 </html>

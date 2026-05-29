@@ -4,13 +4,29 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Recipe Viewer</title>
-  <link id="emi-style" rel="stylesheet" href="/lib/emi.min.css">
-  <link rel="stylesheet" href="/styles.css?v=20">
+  <meta name="emi-renderer-version" content="0.4.1">
+  <script src="site-base.js"></script>
+  <link id="emi-style" rel="stylesheet" href="">
+  <link rel="stylesheet" href="styles.css?v=20">
+  <script>
+    (function () {
+      const params = new URLSearchParams(location.search);
+      const version = params.get('emiVersion')
+        || document.querySelector('meta[name="emi-renderer-version"]').content;
+      const useLocal = params.get('cdn') === 'local' || params.get('cdn') === '0';
+      const isDev = params.get('dev') === '1';
+      const cssFile = isDev ? 'emi.css' : 'emi.min.css';
+      const link = document.getElementById('emi-style');
+      link.href = useLocal
+        ? siteUrl('lib/' + cssFile)
+        : 'https://cdn.jsdelivr.net/npm/emi-recipe-renderer@' + version + '/dist/' + cssFile;
+    })();
+  </script>
 </head>
 <body>
   <header class="site-header">
     <div class="site-header-inner">
-      <a class="site-brand" href="/" title="Recipe Viewer home">
+      <a class="site-brand" href="#" data-site-home title="Recipe Viewer home">
         <span class="site-name">Recipe Viewer</span>
       </a>
 
@@ -99,33 +115,39 @@
     (function () {
       const params = new URLSearchParams(location.search);
       const isDevMode = params.get('dev') === '1';
-      const shouldUseCdn = params.get('cdn') === 'jsdelivr' || params.get('cdn') === '1';
-      const emiVersion = params.get('emiVersion') || '0.4.1';
+      const useLocal = params.get('cdn') === 'local' || params.get('cdn') === '0';
+      const emiVersion = params.get('emiVersion')
+        || document.querySelector('meta[name="emi-renderer-version"]').content;
       const rendererJsFile = isDevMode ? 'emi.js' : 'emi.min.js';
-      const rendererCssFile = isDevMode ? 'emi.css' : 'emi.min.css';
       const script = document.createElement('script');
-      const styleLink = document.getElementById('emi-style');
 
-      if (shouldUseCdn) {
-        const cdnRoot = 'https://cdn.jsdelivr.net/npm/emi-recipe-renderer@' + emiVersion + '/dist';
-        script.src = cdnRoot + '/' + rendererJsFile;
-        styleLink.href = cdnRoot + '/' + rendererCssFile;
+      if (useLocal) {
+        script.src = siteUrl('lib/' + rendererJsFile);
       } else {
-        script.src = '/lib/' + rendererJsFile;
-        styleLink.href = '/lib/' + rendererCssFile;
+        script.src = 'https://cdn.jsdelivr.net/npm/emi-recipe-renderer@'
+          + emiVersion + '/dist/' + rendererJsFile;
       }
-      script.onerror = function () {
+
+      function showError(message) {
         document.body.insertAdjacentHTML('beforeend',
-          '<p style="color:#f88;padding:1rem">Failed to load emi-recipe-renderer. Run <code>npm install</code> (or use <code>?cdn=jsdelivr</code> after publish).</p>');
+          '<p style="color:#f88;padding:1rem">' + message + '</p>');
+      }
+
+      script.onerror = function () {
+        showError('Failed to load emi-recipe-renderer'
+          + (useLocal ? ' from site/lib.' : ' from jsDelivr.')
+          + ' Try <code>?cdn=local</code> after <code>npm install</code>.');
       };
       script.onload = function () {
         if (!globalThis.EmiRecipeRenderer) {
-          document.body.insertAdjacentHTML('beforeend',
-            '<p style="color:#f88;padding:1rem">EmiRecipeRenderer missing after script load.</p>');
+          showError('EmiRecipeRenderer missing after script load.');
           return;
         }
         const boot = document.createElement('script');
-        boot.src = '/app.js';
+        boot.src = 'app.js';
+        boot.onerror = function () {
+          showError('Failed to load app.js from this site. Check GitHub Pages deploy includes site/app.js.');
+        };
         document.body.appendChild(boot);
       };
       document.body.appendChild(script);
