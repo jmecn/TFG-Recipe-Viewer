@@ -1,7 +1,4 @@
 {
-  "default": "foo",
-  "bundles": [
-    "foo",
-    "_guard-test"
-  ]
+  "default": null,
+  "bundles": []
 }

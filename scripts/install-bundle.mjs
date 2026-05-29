@@ -59,10 +59,17 @@ function writeBundlesConfig(cfg) {
   writeFileSync(bundlesJsonPath, `${JSON.stringify(cfg, null, 2)}\n`, 'utf8');
 }
 
-function mergeBundleId(cfg, id) {
+function isBundleInstalled(bundleId) {
+  return existsSync(path.join(bundlesDir, bundleId, 'bundle.json'));
+}
+
+function mergeBundleId(cfg, id, { setDefault = false } = {}) {
   if (!Array.isArray(cfg.bundles)) cfg.bundles = [];
   if (!cfg.bundles.includes(id)) cfg.bundles.push(id);
-  if (!cfg.default) cfg.default = id;
+  const defaultMissing = !cfg.default || !isBundleInstalled(cfg.default);
+  if (setDefault || defaultMissing) {
+    cfg.default = id;
+  }
   writeBundlesConfig(cfg);
 }
 
@@ -116,10 +123,12 @@ if (!existsSync(path.join(absSource, 'bundle.json'))) {
 mkdirSync(bundlesDir, { recursive: true });
 const dest = path.join(bundlesDir, id);
 
-const cfg = readBundlesConfig();
-mergeBundleId(cfg, id);
-
 if (sameBundleDir(absSource, dest)) {
+  if (op === 'copy') {
+    writeBundlesConfig({ default: id, bundles: [id] });
+  } else {
+    mergeBundleId(readBundlesConfig(), id);
+  }
   console.log(`OK: bundle "${id}" already at site/bundles/${id} (same path, skipped ${op})`);
   console.log(`Updated: site/bundles.json`);
   process.exit(0);
@@ -142,6 +151,12 @@ if (op === 'link') {
   symlinkSync(target, dest, 'dir');
 } else {
   cpSync(absSource, dest, { recursive: true });
+}
+
+if (op === 'copy') {
+  writeBundlesConfig({ default: id, bundles: [id] });
+} else {
+  mergeBundleId(readBundlesConfig(), id);
 }
 
 console.log(`OK: ${op} bundle "${id}" -> site/bundles/${id}`);

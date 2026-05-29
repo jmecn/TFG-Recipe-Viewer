@@ -16,7 +16,7 @@
     "start": "npm run sync-lib && npm run validate && npm run serve"
   },
   "dependencies": {
-    "emi-bundle-optimize": "0.1.0",
-    "emi-recipe-renderer": "0.2.1"
+    "emi-bundle-optimize": "0.2.0",
+    "emi-recipe-renderer": "0.3.0"
   }
 }

@@ -7,7 +7,7 @@ TerraFirmaGreg Modern 配方静态浏览站：由 GitHub Actions 从 [Modpack-Mo
 ## 本地开发（已有 bundle）
 
 ```bash
-npm install   # 需要 npm 上已有 emi-bundle-optimize@0.1.0
+npm install   # 需要 npm 上已有 emi-bundle-optimize@0.2.0
 npm run copy -- --id tfg-0.12.8 /path/to/optimized-bundle
 npm start
 ```
@@ -22,13 +22,13 @@ npm run optimize -- --in /path/to/export-raw/emi --out /path/to/export-opt --for
 
 | 依赖 | 发布物 | CI 获取方式 |
 |------|--------|-------------|
-| [minecraft-web-export](https://github.com/jmecn/minecraft-web-export) | GitHub Release **jar** | 按 tag 下载（如 `v0.2.0` → `minecraft-web-export-0.2.0.jar`） |
-| [emi-recipe-renderer](https://github.com/jmecn/emi-recipe-renderer) | **npm** 包（含预编译 `dist/`） | `npm install emi-recipe-renderer@0.2.1`，不编译 |
-| [emi-bundle-optimize](https://github.com/jmecn/emi-bundle-optimize) | **npm** CLI 包 | `npm install emi-bundle-optimize@0.1.0`，`npx emi-bundle-optimize optimize …` |
+| [minecraft-web-export](https://github.com/jmecn/minecraft-web-export) | GitHub Release **jar** | 按 tag 下载（如 `v0.3.0` → `minecraft-web-export-0.3.0.jar`） |
+| [emi-recipe-renderer](https://github.com/jmecn/emi-recipe-renderer) | **npm** 包（含预编译 `dist/`） | `npm install emi-recipe-renderer@0.3.0`，不编译 |
+| [emi-bundle-optimize](https://github.com/jmecn/emi-bundle-optimize) | **npm** CLI 包 | `npm install emi-bundle-optimize@0.2.0`，`npx emi-bundle-optimize optimize …` |
 
 `emi-recipe-renderer` 与 `emi-bundle-optimize` 在 GitHub **Release published** 后由各自仓库的 `npm-publish` workflow 发布到 npm；Pages CI 只消费 npm 版本（见 `ci/build.env`）。
 
-**顺序**：先发布 `emi-bundle-optimize@0.1.0`，再跑本仓库 CI。发布后可在本地执行 `npm install` 并提交更新后的 `package-lock.json`（可选，便于锁定 `sharp` 等传递依赖）。
+**顺序**：先发布 `emi-bundle-optimize@0.2.0` 与 `emi-recipe-renderer@0.3.0`，再跑本仓库 CI。发布后可在本地执行 `npm install` 并提交更新后的 `package-lock.json`（可选，便于锁定 `sharp` 等传递依赖）。
 
 ## CI 流水线
 
