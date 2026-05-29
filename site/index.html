@@ -100,7 +100,7 @@
       const params = new URLSearchParams(location.search);
       const isDevMode = params.get('dev') === '1';
       const shouldUseCdn = params.get('cdn') === 'jsdelivr' || params.get('cdn') === '1';
-      const emiVersion = params.get('emiVersion') || '0.3.0';
+      const emiVersion = params.get('emiVersion') || '0.4.1';
       const rendererJsFile = isDevMode ? 'emi.js' : 'emi.min.js';
       const rendererCssFile = isDevMode ? 'emi.css' : 'emi.min.css';
       const script = document.createElement('script');
