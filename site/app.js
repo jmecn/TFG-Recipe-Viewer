@@ -59,16 +59,123 @@
     return DEMO_JSON_CACHE.get(key);
   }
 
+  function catalogIdFromIndexEntry(ns, path) {
+    if (path.includes(':')) return path;
+    return `${ns}:${path}`;
+  }
+
   function parseItemsCatalog(raw) {
     if (!raw || typeof raw !== 'object') throw new Error('items/index.json must be an object');
-    const ids = [];
+    const ids = new Set();
     for (const [ns, paths] of Object.entries(raw)) {
       if (ns === 'schema' || !Array.isArray(paths)) continue;
       for (const p of paths) {
-        if (typeof p === 'string' && p.length > 0) ids.push(`${ns}:${p}`);
+        if (typeof p === 'string' && p.length > 0) ids.add(catalogIdFromIndexEntry(ns, p));
       }
     }
-    return ids.sort();
+    return [...ids].sort();
+  }
+
+  function itemDetailPaths(itemId) {
+    const id = canonicalItemId(itemId);
+    const sep = id.indexOf(':');
+    if (sep <= 0 || sep >= id.length - 1) return [];
+    const paths = [
+      `items/${id.slice(0, sep)}/${id.slice(sep + 1)}.json`,
+      `items/fluid/${id}.json`,
+    ];
+    return [...new Set(paths)];
+  }
+
+  function mergeItemDetails(details) {
+    const merged = { inputs: {}, outputs: {}, tags: { items: [], blocks: [], fluids: [] }, tagsInBundle: { items: [], blocks: [], fluids: [] } };
+    let schema = null;
+    for (const detail of details) {
+      if (!detail || typeof detail !== 'object') continue;
+      if (detail.schema != null) schema = detail.schema;
+      for (const side of ['inputs', 'outputs']) {
+        if (!detail[side] || typeof detail[side] !== 'object') continue;
+        for (const [categoryId, recipeIds] of Object.entries(detail[side])) {
+          if (!Array.isArray(recipeIds)) continue;
+          const bucket = merged[side][categoryId] || (merged[side][categoryId] = new Set());
+          for (const recipeId of recipeIds) bucket.add(recipeId);
+        }
+      }
+      for (const bucket of TAG_BUCKET_ORDER) {
+        for (const tagId of detail?.tags?.[bucket] || []) {
+          if (typeof tagId === 'string' && tagId.length > 0) merged.tags[bucket].push(tagId);
+        }
+        for (const tagId of detail?.tagsInBundle?.[bucket] || []) {
+          if (typeof tagId === 'string' && tagId.length > 0) merged.tagsInBundle[bucket].push(tagId);
+        }
+      }
+    }
+    const out = {};
+    if (schema != null) out.schema = schema;
+    for (const side of ['inputs', 'outputs']) {
+      if (Object.keys(merged[side]).length === 0) continue;
+      out[side] = {};
+      for (const [categoryId, recipeIds] of Object.entries(merged[side])) {
+        out[side][categoryId] = [...recipeIds].sort();
+      }
+    }
+    for (const bucket of TAG_BUCKET_ORDER) {
+      if (merged.tags[bucket].length) {
+        out.tags = out.tags || { items: [], blocks: [], fluids: [] };
+        out.tags[bucket] = [...new Set(merged.tags[bucket])].sort();
+      }
+      if (merged.tagsInBundle[bucket].length) {
+        out.tagsInBundle = out.tagsInBundle || { items: [], blocks: [], fluids: [] };
+        out.tagsInBundle[bucket] = [...new Set(merged.tagsInBundle[bucket])].sort();
+      }
+    }
+    return Object.keys(out).length ? out : null;
+  }
+
+  function displayNameForId(renderer, id) {
+    const bare = canonicalItemId(id);
+    const langTable = renderer._activeLang?.current || null;
+    const asItem = renderer.translateRegistry(id, 'item');
+    if (asItem && asItem !== bare) return asItem;
+    const asFluid = renderer.translateRegistry(id, 'fluid');
+    if (asFluid && asFluid !== bare) return asFluid;
+    if (global.GtceuTranslate?.composeRegistry) {
+      const composedItem = global.GtceuTranslate.composeRegistry(
+        bare,
+        'item',
+        (key) => renderer.translateKey(key),
+        langTable,
+      );
+      if (composedItem) return composedItem;
+      const composedFluid = global.GtceuTranslate.composeRegistry(
+        bare,
+        'fluid',
+        (key) => renderer.translateKey(key),
+        langTable,
+      );
+      if (composedFluid) return composedFluid;
+    }
+    return asFluid || bare;
+  }
+
+  function stripFormattedText(text) {
+    if (EmiRecipeRenderer?.stripMinecraftFormatting) {
+      return EmiRecipeRenderer.stripMinecraftFormatting(text);
+    }
+    if (global.MinecraftText?.strip) return global.MinecraftText.strip(text);
+    return String(text ?? '').replace(/§./g, '');
+  }
+
+  function setFormattedText(el, text) {
+    if (EmiRecipeRenderer?.setFormattedText) {
+      EmiRecipeRenderer.setFormattedText(el, text);
+      return;
+    }
+    if (global.MinecraftText?.apply) {
+      global.MinecraftText.apply(el, text);
+      return;
+    }
+    el.textContent = stripFormattedText(text);
   }
 
   function canonicalItemId(id) {
@@ -86,10 +193,7 @@
   }
 
   function itemDetailPath(itemId) {
-    const id = canonicalItemId(itemId);
-    const sep = id.indexOf(':');
-    if (sep <= 0 || sep >= id.length - 1) return null;
-    return `items/${id.slice(0, sep)}/${id.slice(sep + 1)}.json`;
+    return itemDetailPaths(itemId)[0] || null;
   }
 
   function isEmiTagDisplayRecipe(recipeId) {
@@ -524,6 +628,10 @@
     navigate(partial, replace = false) {
       const route = this.buildRouteFromUi(partial);
       if (route.view === 'items') route.id = null;
+      if (route.view === 'item' && route.id) {
+        route.search = '';
+        this.els.filter.value = '';
+      }
       const url = buildAppUrl(route);
       if (replace) history.replaceState({}, '', url);
       else history.pushState({}, '', url);
@@ -602,7 +710,9 @@
       const q = normalizedFilterQuery(this.els.filter.value);
       if (!q) return [...this.itemIds];
       return this.itemIds.filter((id) => {
-        const name = this.renderer ? this.renderer.translateRegistry(id, 'item').toLowerCase() : '';
+        const name = this.renderer
+          ? stripFormattedText(displayNameForId(this.renderer, id)).toLowerCase()
+          : '';
         return id.toLowerCase().includes(q) || name.includes(q);
       });
     }
@@ -614,8 +724,9 @@
       return wrap;
     }
 
-    mountIconSpan(wrap, renderer, itemId) {
-      wrap.replaceChildren(renderer.createAtlasSpanForIconKey(itemId));
+    mountIconSpan(wrap, renderer, itemId, options = {}) {
+      const key = options.atlasKey ? String(itemId) : canonicalItemId(itemId);
+      wrap.replaceChildren(renderer.createAtlasSpanForIconKey(key));
       wrap.dataset.iconMounted = '1';
     }
 
@@ -637,7 +748,7 @@
       text.className = 'item-card-text';
       const name = document.createElement('div');
       name.className = 'item-card-name';
-      name.textContent = renderer.translateRegistry(id, 'item');
+      setFormattedText(name, displayNameForId(renderer, id));
       const idEl = document.createElement('div');
       idEl.className = 'item-card-id';
       idEl.textContent = id;
@@ -676,12 +787,15 @@
     async loadItemDetail(itemId) {
       const id = canonicalItemId(itemId);
       if (this.itemDetailCache.has(id)) return this.itemDetailCache.get(id);
-      const rel = itemDetailPath(id);
-      if (!rel) return null;
-      const detail = await loadDemoJson(this.baseUrl, rel, null);
-      if (!detail || typeof detail !== 'object') return null;
-      this.itemDetailCache.set(id, detail);
-      return detail;
+      const details = [];
+      for (const rel of itemDetailPaths(id)) {
+        const detail = await loadDemoJson(this.baseUrl, rel, null);
+        if (detail && typeof detail === 'object') details.push(detail);
+      }
+      const merged = mergeItemDetails(details);
+      if (!merged) return null;
+      this.itemDetailCache.set(id, merged);
+      return merged;
     }
 
     categoryLabel(categoryId) {
@@ -732,9 +846,9 @@
         const iconWrap = document.createElement('span');
         iconWrap.className = 'emi-category-tab-icon';
         const entry = this.categoriesManifest?.byId?.get(categoryId);
-        const iconRef = entry?.iconItem || entry?.iconKey;
+        const iconRef = entry?.iconKey || entry?.iconItem;
         if (iconRef && this.renderer) {
-          this.mountIconSpan(iconWrap, this.renderer, canonicalItemId(iconRef));
+          this.mountIconSpan(iconWrap, this.renderer, iconRef, { atlasKey: String(iconRef).includes('@') });
         }
         const label = document.createElement('span');
         label.className = 'emi-category-tab-label';
@@ -884,6 +998,7 @@
       if (isNewItem) {
         this.detailScrollTop = { recipes: 0, uses: 0, tags: 0 };
         this.itemCategorySelection = { recipes: null, uses: null };
+        this.activeDetailTab = 'recipes';
       }
       const canonicalId = canonicalItemId(itemId);
 
@@ -901,7 +1016,7 @@
       text.className = 'item-detail-body';
       const title = document.createElement('h1');
       title.className = 'item-detail-title';
-      title.textContent = renderer.translateRegistry(canonicalId, 'item');
+      setFormattedText(title, displayNameForId(renderer, canonicalId));
       const sub = document.createElement('p');
       sub.className = 'item-detail-id';
       sub.textContent = canonicalId;
@@ -991,7 +1106,8 @@
         text.className = 'item-card-text';
         const name = document.createElement('div');
         name.className = 'item-card-name';
-        name.textContent = row.isItem ? renderer.translateRegistry(row.id, 'item') : row.id;
+        const rowLabel = row.isItem ? renderer.translateRegistry(row.id, 'item') : row.id;
+        setFormattedText(name, rowLabel);
         const idEl = document.createElement('div');
         idEl.className = 'item-card-id';
         idEl.textContent = row.raw;
@@ -1030,7 +1146,7 @@
       text.className = 'item-detail-body';
       const title = document.createElement('h1');
       title.className = 'item-detail-title';
-      title.textContent = label;
+      setFormattedText(title, label);
       const sub = document.createElement('p');
       sub.className = 'item-detail-id';
       sub.textContent = tagId;

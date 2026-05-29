@@ -143,12 +143,28 @@
           showError('EmiRecipeRenderer missing after script load.');
           return;
         }
-        const boot = document.createElement('script');
-        boot.src = 'app.js';
-        boot.onerror = function () {
-          showError('Failed to load app.js from this site. Check GitHub Pages deploy includes site/app.js.');
+        const mcScript = document.createElement('script');
+        mcScript.src = siteUrl('minecraft-text.js');
+        mcScript.onload = function () {
+          const gtScript = document.createElement('script');
+          gtScript.src = siteUrl('gtceu-translate.js');
+          gtScript.onload = function () {
+            const boot = document.createElement('script');
+            boot.src = 'app.js';
+            boot.onerror = function () {
+              showError('Failed to load app.js from this site. Check GitHub Pages deploy includes site/app.js.');
+            };
+            document.body.appendChild(boot);
+          };
+          gtScript.onerror = function () {
+            showError('Failed to load gtceu-translate.js from this site.');
+          };
+          document.body.appendChild(gtScript);
         };
-        document.body.appendChild(boot);
+        mcScript.onerror = function () {
+          showError('Failed to load minecraft-text.js from this site.');
+        };
+        document.body.appendChild(mcScript);
       };
       document.body.appendChild(script);
     })();

@@ -1,0 +1,120 @@
+name: Deploy Pages
+
+on:
+  push:
+    branches: ["main", "master"]
+    paths:
+      - "site/**"
+      - "ci/**"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/**"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: Bundle id to deploy (empty = resolve from modpack tag / export artifact)
+        required: false
+        default: ""
+      modpack_tag:
+        description: Modpack-Modern semver tag when resolving bundle id (empty = latest release)
+        required: false
+        default: ""
+      renderer_version:
+        description: emi-recipe-renderer npm version (empty = ci/build.env)
+        required: false
+        default: ""
+  workflow_run:
+    workflows: ["Export EMI bundle"]
+    types: [completed]
+    branches: ["main", "master"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'workflow_run'
+      || github.event.workflow_run.conclusion == 'success'
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout viewer
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Load CI config
+        run: bash scripts/ci-load-config.sh
+
+      - name: Download export metadata
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: export-meta
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Resolve bundle id
+        id: metadata
+        env:
+          MODPACK_TAG: ${{ github.event.inputs.modpack_tag || env.MODPACK_TAG }}
+        run: |
+          if [ -n "${{ github.event.inputs.bundle_id }}" ]; then
+            echo "bundle_id=${{ github.event.inputs.bundle_id }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -f export-meta/bundle-id ]; then
+            echo "bundle_id=$(cat export-meta/bundle-id)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          bash scripts/ci-resolve-bundle-id.sh
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Prep Node (renderer + validate)
+        env:
+          RENDERER_VER: ${{ github.event.inputs.renderer_version || env.RENDERER_VERSION }}
+          OPTIMIZE_VER: ${{ env.OPTIMIZE_VERSION }}
+        run: bash scripts/ci-prep-node.sh
+
+      - name: Restore bundle cache
+        id: bundle-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: site/bundles/${{ steps.metadata.outputs.bundle_id }}
+          key: emi-bundle-${{ steps.metadata.outputs.bundle_id }}
+          fail-on-cache-miss: true
+
+      - name: Prepare site for deploy
+        env:
+          BUNDLE_ID: ${{ steps.metadata.outputs.bundle_id }}
+        run: bash scripts/ci-prep-deploy-site.sh
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,16 +1,10 @@
-name: Build and deploy Pages
+name: Export EMI bundle
 
 on:
-  push:
-    branches: ["main", "master"]
   workflow_dispatch:
     inputs:
       mwe_version:
         description: minecraft-web-export release tag (empty = ci/build.env)
-        required: false
-        default: ""
-      renderer_version:
-        description: emi-recipe-renderer npm version (empty = ci/build.env)
         required: false
         default: ""
       optimize_version:
@@ -28,21 +22,18 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: export-bundle
   cancel-in-progress: false
 
 jobs:
-  build:
+  export:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      # --- Fast prep (fail cheap before MC export / optimize) ---
       - name: Checkout viewer
         uses: actions/checkout@v4
         with:
@@ -58,22 +49,18 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Prep Node (npm ci)
+      - name: Prep Node (optimize CLI only)
         env:
           OPTIMIZE_VER: ${{ github.event.inputs.optimize_version || env.OPTIMIZE_VERSION }}
-          RENDERER_VER: ${{ github.event.inputs.renderer_version || env.RENDERER_VERSION }}
+          RENDERER_VER: ${{ env.RENDERER_VERSION }}
         run: bash scripts/ci-prep-node.sh
 
-      # --- Modpack + MC export (slow) ---
       - name: Checkout Modpack-Modern
         id: modpack
         env:
-          MODPACK_TAG: ${{ github.event.inputs.modpack_tag }}
+          MODPACK_TAG: ${{ github.event.inputs.modpack_tag || env.MODPACK_TAG }}
         run: |
           chmod +x scripts/ci-checkout-modpack.sh
-          if [ -n "${MODPACK_TAG:-}" ]; then
-            export MODPACK_TAG
-          fi
           bash scripts/ci-checkout-modpack.sh
 
       - name: Prepare bundle metadata
@@ -157,7 +144,6 @@ jobs:
           path: ${{ env.RUNNER_HOME }}/.minecraft
           key: ${{ steps.hmc-restore.outputs.cache-primary-key }}
 
-      # --- Optimize + finalize site (needs export on disk) ---
       - name: Optimize bundle
         run: |
           bash scripts/ci-verify-emi-bundle.sh
@@ -169,10 +155,27 @@ jobs:
 
       - name: Install bundle into site
         run: |
-          bash scripts/ci-patch-renderer-version.sh
           npm run copy -- --id "${{ steps.metadata.outputs.bundle_id }}" "${{ env.EXPORT_OPT_STAGING }}"
-          npm run validate
-          test -f site/app.js
+          npm run validate -- "site/bundles/${{ steps.metadata.outputs.bundle_id }}"
+
+      - name: Save bundle cache
+        uses: actions/cache/save@v4
+        with:
+          path: site/bundles/${{ steps.metadata.outputs.bundle_id }}
+          key: emi-bundle-${{ steps.metadata.outputs.bundle_id }}
+
+      - name: Write export metadata
+        env:
+          BUNDLE_ID: ${{ steps.metadata.outputs.bundle_id }}
+          MODPACK_TAG: ${{ steps.modpack.outputs.modpack_tag }}
+        run: bash scripts/ci-write-export-meta.sh
+
+      - name: Upload export metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-meta
+          path: export-meta/
+          retention-days: 90
 
       - name: Build debug — collect
         if: failure()
@@ -185,24 +188,3 @@ jobs:
           name: build-debug
           path: ci-debug/
           if-no-files-found: ignore
-
-      - name: Setup Pages
-        if: success()
-        uses: actions/configure-pages@v5
-
-      - name: Upload Pages artifact
-        if: success()
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: site
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4

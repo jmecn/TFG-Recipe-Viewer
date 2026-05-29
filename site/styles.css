@@ -298,16 +298,16 @@ body {
 
 .emi-category-tab-icon {
   display: inline-flex;
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
   align-items: center;
   justify-content: center;
 }
 
 .emi-category-tab-icon .icon-atlas {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .emi-category-tab-label {
@@ -532,9 +532,12 @@ body {
 
 /* Text widgets in layouts are scaled with the whole recipe; keep them readable. */
 .emi-recipe-root .emi-text {
-  /* Default renderer font is 12px, but the root is scaled by --emi-scale (usually 2). */
+  font-family: Minecraftia, Minecraft, monospace;
   font-size: calc(12px / var(--emi-scale, 2));
-  line-height: 1;
+  line-height: 1.1;
+  text-shadow: none;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
 }
 
 .item-detail-title {

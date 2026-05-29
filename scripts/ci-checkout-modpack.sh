@@ -4,28 +4,16 @@
 # Override: MODPACK_TAG=0.12.8 ./scripts/ci-checkout-modpack.sh
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MP="${MODPACK_DIR:-$ROOT/Modpack-Modern}"
-MODPACK_REPO="${MODPACK_REPO:-https://github.com/TerraFirmaGreg-Team/Modpack-Modern.git}"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/ci-modpack-tag.lib.sh"
 
-resolve_latest_semver_tag() {
-  git ls-remote --tags "$MODPACK_REPO" \
-    | awk -F/ '{print $NF}' \
-    | sed 's/\^{}//' \
-    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
-    | sort -Vu \
-    | tail -n 1
-}
-
+TAG="$(resolve_modpack_tag)"
 if [[ -n "${MODPACK_TAG:-}" ]]; then
-  TAG="$MODPACK_TAG"
   echo "Using MODPACK_TAG override: $TAG"
 else
-  TAG="$(resolve_latest_semver_tag)"
-  if [[ -z "$TAG" ]]; then
-    echo "error: no semver release tags found on $MODPACK_REPO" >&2
-    exit 1
-  fi
   echo "Latest release tag: $TAG"
 fi
 

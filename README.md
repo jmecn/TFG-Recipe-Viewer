@@ -2,7 +2,7 @@
 
 TerraFirmaGreg Modern 配方静态浏览站：由 GitHub Actions 从 [Modpack-Modern](https://github.com/TerraFirmaGreg-Team/Modpack-Modern) 最新 release tag 导出 EMI bundle，经 [emi-bundle-optimize](https://github.com/jmecn/emi-bundle-optimize) 优化后，用 [emi-recipe-renderer](https://github.com/jmecn/emi-recipe-renderer) 在浏览器中展示。
 
-本仓库**不包含** `site/bundles/` 数据；制品由 CI 生成并部署到 GitHub Pages。
+本仓库**不包含** `site/bundles/` 数据；bundle 由 **Export EMI bundle** workflow 生成，经 Actions Cache（key = `emi-bundle-<bundle_id>`）供 **Deploy Pages** 复用。
 
 ## 本地开发（已有 bundle）
 
@@ -30,18 +30,31 @@ npm run optimize -- --in /path/to/export-raw/emi --out /path/to/export-opt --for
 
 **顺序**：先发布 `emi-bundle-optimize` 与 `emi-recipe-renderer` 对应版本，再跑本仓库 CI。发布后可在本地执行 `npm install` 并提交更新后的 `package-lock.json`（可选，便于锁定传递依赖）。
 
-## CI 流水线
+## CI 流水线（两条 workflow）
 
-见 [.github/workflows/build-pages.yml](.github/workflows/build-pages.yml)。概要：
+### 1. Export EMI bundle（重，按需）
 
-1. Modpack-Modern 最新 semver tag → `pakku fetch`
-2. GitHub Release jar → HeadlessMC + xvfb 全量 EMI 导出
-3. npm 上的 `emi-bundle-optimize` 优化导出 → `export-opt/`
-4. 拷贝进 `site/bundles/tfg-<tag>/`，`emi-recipe-renderer` 同步到 `site/lib/`，部署 `site/`
+Modpack 导出 → optimize → 写入 `site/bundles/tfg-<tag>/` → **Cache save**（key: `emi-bundle-tfg-<tag>`，重跑覆盖）→ 上传 `export-meta` artifact → **自动触发 Deploy Pages**。
 
-### 手动触发
+Actions → **Export EMI bundle** → Run workflow
 
-Actions → **Build and deploy Pages** → **Run workflow**
+### 2. Deploy Pages（轻，日常）
+
+从 Cache **restore** bundle（按 bundle id）→ 更新 `site/index.html` renderer 版本、`bundles.json` → 校验 → 部署 `site/`。
+
+触发方式：
+
+- push 到 `main`/`master` 且改动 `site/**`、`ci/**`、`scripts/**` 等（见 workflow `paths`）
+- Export 成功后 `workflow_run` 自动部署
+- 手动 **Run workflow**（可指定 `bundle_id` 或 `modpack_tag`）
+
+**只改前端、不重导数据**：改 `site/app.js` 等并 push，或手动跑 Deploy Pages；无需再跑 Export。
+
+| 变更类型 | 需要跑的 workflow |
+|---------|-------------------|
+| 站点 UI / CSS / 站点脚本 | Deploy Pages |
+| 升 CDN `emi-recipe-renderer`（`ci/build.env`） | Deploy Pages |
+| modpack 更新 / MWE 导出逻辑 / 新配方数据 | Export EMI bundle（会连带 Deploy） |
 
 ## 路由
 
