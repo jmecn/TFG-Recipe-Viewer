@@ -15,7 +15,6 @@ const bundlesJsonPath = path.join(siteDir, 'bundles.json');
 const ROUTES_DIR = 'recipes/routes';
 const LAYOUT_PACKS_DIR = 'recipes/layout-packs';
 const HARD_CAP_BYTES = 2 * 1024 * 1024;
-const LEGACY_PATHS = ['recipes/index.json', 'recipes/shards', 'recipes/layouts'];
 
 function fail(message) {
   console.error(`FAIL: ${message}`);
@@ -293,12 +292,6 @@ function parseItemIdsFromIndex(itemsIndex) {
 function validateBundleRoot(bundleRoot) {
   if (!bundleRoot || !fs.existsSync(bundleRoot)) {
     fail(`bundle root does not exist: ${bundleRoot || '<unset>'}`);
-  }
-
-  for (const rel of LEGACY_PATHS) {
-    if (fs.existsSync(path.join(bundleRoot, rel))) {
-      fail(`legacy path must not exist: ${rel}`);
-    }
   }
 
   const { bundle, recipeIds } = readRecipeIds(bundleRoot);
