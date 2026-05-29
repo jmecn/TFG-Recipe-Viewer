@@ -36,18 +36,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  export:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 180
     env:
       GH_TOKEN: ${{ github.token }}
-    outputs:
-      modpack_tag: ${{ steps.modpack.outputs.modpack_tag }}
-      bundle_id: ${{ steps.metadata.outputs.bundle_id }}
-      pakku_lock_hash: ${{ steps.metadata.outputs.pakku_lock_hash }}
-      emi_bundle_cache_key: ${{ steps.metadata.outputs.emi_bundle }}
-      emi_opt_cache_key: ${{ steps.metadata.outputs.emi_opt }}
     steps:
+      # --- Fast prep (fail cheap before MC export / optimize) ---
       - name: Checkout viewer
         uses: actions/checkout@v4
         with:
@@ -56,6 +51,31 @@ jobs:
       - name: Load CI config
         run: bash scripts/ci-load-config.sh
 
+      - name: Checkout emi-bundle-optimize
+        uses: actions/checkout@v4
+        with:
+          repository: jmecn/emi-bundle-optimize
+          ref: ${{ github.event.inputs.optimize_ref || env.OPTIMIZE_REF }}
+          path: emi-bundle-optimize
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            emi-bundle-optimize/package-lock.json
+
+      - name: Prep emi-bundle-optimize (npm ci)
+        run: bash scripts/ci-prep-optimize.sh
+
+      - name: Prep viewer site (npm install + renderer lib)
+        env:
+          RENDERER_VER: ${{ github.event.inputs.renderer_version || env.RENDERER_VERSION }}
+        run: bash scripts/ci-prep-site.sh
+
+      # --- Modpack + MC export (slow) ---
       - name: Checkout Modpack-Modern
         id: modpack
         env:
@@ -86,32 +106,9 @@ jobs:
             libgl1 libgl1-mesa-dri \
             libopenal1
 
-      - name: Restore pakku-fetched mods
-        id: pakku-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ${{ env.MODPACK_DIR }}/mods
-            ${{ env.MODPACK_DIR }}/resourcepacks
-            ${{ env.MODPACK_DIR }}/shaderpacks
-          key: pakku-${{ hashFiles(format('{0}/pakku-lock.json', env.MODPACK_DIR)) }}
-          restore-keys: |
-            pakku-
-
-      - name: Fetch modpack mods (cache miss only)
-        if: steps.pakku-restore.outputs.cache-hit != 'true'
+      - name: Fetch modpack mods (pakku)
         working-directory: ${{ env.MODPACK_DIR }}
         run: java -jar pakku.jar fetch
-
-      - name: Save pakku cache (exact-key miss only)
-        if: steps.pakku-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ${{ env.MODPACK_DIR }}/mods
-            ${{ env.MODPACK_DIR }}/resourcepacks
-            ${{ env.MODPACK_DIR }}/shaderpacks
-          key: ${{ steps.pakku-restore.outputs.cache-primary-key }}
 
       - name: Install minecraft-web-export
         env:
@@ -141,7 +138,6 @@ jobs:
         run: bash scripts/ci-setup-hmc.sh
 
       - name: Launch modpack and verify EMI export
-        id: mc_launch
         env:
           ALSOFT_DRIVERS: "null"
           EXPORT_WARMUP: ${{ github.event.inputs.export_warmup_ticks || env.EXPORT_WARMUP_TICKS }}
@@ -172,129 +168,46 @@ jobs:
           path: ${{ env.RUNNER_HOME }}/.minecraft
           key: ${{ steps.hmc-restore.outputs.cache-primary-key }}
 
-      - name: Save raw EMI bundle for optimize job
-        if: success()
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.EXPORT_RAW }}/${{ env.EXPORT_BUNDLE_SUBDIR }}
-          key: ${{ steps.metadata.outputs.emi_bundle }}
-
-      - name: MC export debug — collect
-        if: failure()
-        run: bash scripts/ci-collect-export-debug.sh
-
-      - name: MC export debug — upload
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mc-export-debug
-          path: ci-debug/
-          if-no-files-found: ignore
-
-  optimize:
-    needs: export
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
-      - name: Checkout viewer
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Load CI config
-        run: bash scripts/ci-load-config.sh
-
-      - name: Restore raw EMI bundle
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.EXPORT_RAW }}/${{ env.EXPORT_BUNDLE_SUBDIR }}
-          key: ${{ needs.export.outputs.emi_bundle_cache_key }}
-          fail-on-cache-miss: true
-
-      - name: Checkout emi-bundle-optimize
-        uses: actions/checkout@v4
-        with:
-          repository: jmecn/emi-bundle-optimize
-          ref: ${{ github.event.inputs.optimize_ref || env.OPTIMIZE_REF }}
-          path: emi-bundle-optimize
-
-      - name: Setup Node (emi-bundle-optimize)
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: emi-bundle-optimize/package-lock.json
-
+      # --- Optimize + finalize site (needs export on disk) ---
       - name: Optimize bundle
-        id: optimize
         working-directory: emi-bundle-optimize
         run: |
           bash ../scripts/ci-verify-emi-bundle.sh
-          npm ci
           node bin/cli.mjs optimize \
             --in "${{ env.EXPORT_BUNDLE }}" \
             --out "${{ env.EXPORT_OPT_STAGING }}" \
             --force \
             --prune-lang
 
-      - name: Save optimized bundle for assemble job
-        if: success()
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.EXPORT_OPT_DIR }}
-          key: ${{ needs.export.outputs.emi_opt_cache_key }}
+      - name: Install bundle into site
+        run: |
+          npm run copy -- --id "${{ steps.metadata.outputs.bundle_id }}" "${{ env.EXPORT_OPT_STAGING }}"
+          npm run validate
 
-      - name: Optimize debug — collect
+      - name: Build debug — collect
         if: failure()
         run: bash scripts/ci-collect-export-debug.sh --phase optimize
 
-      - name: Optimize debug — upload
+      - name: Build debug — upload
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: optimize-debug
+          name: build-debug
           path: ci-debug/
           if-no-files-found: ignore
 
-  assemble:
-    needs: [export, optimize]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout viewer
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Load CI config
-        run: bash scripts/ci-load-config.sh
-
-      - name: Restore optimized bundle
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.EXPORT_OPT_DIR }}
-          key: ${{ needs.export.outputs.emi_opt_cache_key }}
-          fail-on-cache-miss: true
-
-      - name: Assemble static site
-        env:
-          RENDERER_VER: ${{ github.event.inputs.renderer_version || env.RENDERER_VERSION }}
-        run: |
-          npm pkg set "dependencies.emi-recipe-renderer=${RENDERER_VER}"
-          npm install
-          npm run copy -- --id "${{ needs.export.outputs.bundle_id }}" "${{ env.EXPORT_OPT_STAGING }}"
-          npm run validate
-
       - name: Setup Pages
+        if: success()
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
+        if: success()
         uses: actions/upload-pages-artifact@v4
         with:
           path: site
 
   deploy:
-    needs: assemble
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
