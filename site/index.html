@@ -150,7 +150,7 @@
           gtScript.src = siteUrl('gtceu-translate.js');
           gtScript.onload = function () {
             const boot = document.createElement('script');
-            boot.src = 'app.js';
+            boot.src = 'app.js?v=22';
             boot.onerror = function () {
               showError('Failed to load app.js from this site. Check GitHub Pages deploy includes site/app.js.');
             };

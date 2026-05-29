@@ -367,6 +367,7 @@
       this.detailScrollTop = { recipes: 0, uses: 0, tags: 0 };
       this.tagMembersPage = 1;
       this.tagMembersAll = [];
+      this.displayNameCache = new Map();
       this.virtual = {
         recipes: { ids: [], container: null, raf: 0 },
         uses: { ids: [], container: null, raf: 0 },
@@ -515,6 +516,7 @@
       this.itemDetailCache.clear();
       this.categoriesManifest = null;
       this.itemCategorySelection = { recipes: null, uses: null };
+      this.displayNameCache.clear();
       DEMO_JSON_CACHE.clear();
 
       const renderer = new EmiRecipeRenderer(this.rendererOptions());
@@ -707,19 +709,29 @@
     async onLocaleChange() {
       this.locale = this.els.locale.value;
       localStorage.setItem(STORAGE_LOCALE, this.locale);
+      this.displayNameCache.clear();
       this.syncQueryFromUi(true);
       await this.ensureRenderer();
       await this.syncRouteFromLocation();
     }
 
+    itemDisplayNameLower(id) {
+      if (!this.renderer) return '';
+      let cached = this.displayNameCache.get(id);
+      if (cached === undefined) {
+        cached = stripFormattedText(displayNameForId(this.renderer, id)).toLowerCase();
+        this.displayNameCache.set(id, cached);
+      }
+      return cached;
+    }
+
     filteredItemIds() {
       const q = normalizedFilterQuery(this.els.filter.value);
-      if (!q) return [...this.itemIds];
+      if (!q) return this.itemIds;
       return this.itemIds.filter((id) => {
-        const name = this.renderer
-          ? stripFormattedText(displayNameForId(this.renderer, id)).toLowerCase()
-          : '';
-        return id.toLowerCase().includes(q) || name.includes(q);
+        const idLower = id.toLowerCase();
+        if (idLower.includes(q)) return true;
+        return this.itemDisplayNameLower(id).includes(q);
       });
     }
 
