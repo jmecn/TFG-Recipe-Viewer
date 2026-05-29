@@ -39,6 +39,8 @@ jobs:
   export:
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    env:
+      GH_TOKEN: ${{ github.token }}
     outputs:
       modpack_tag: ${{ steps.modpack.outputs.modpack_tag }}
       bundle_id: ${{ steps.metadata.outputs.bundle_id }}
