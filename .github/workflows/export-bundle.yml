@@ -145,13 +145,17 @@ jobs:
           key: ${{ steps.hmc-restore.outputs.cache-primary-key }}
 
       - name: Optimize bundle
+        env:
+          NODE_OPTIONS: --trace-uncaught
         run: |
           bash scripts/ci-verify-emi-bundle.sh
+          echo "::group::emi-bundle-optimize"
           npx emi-bundle-optimize optimize \
             --in "${{ env.EXPORT_BUNDLE }}" \
             --out "${{ env.EXPORT_OPT_STAGING }}" \
             --force \
             --prune-lang
+          echo "::endgroup::"
 
       - name: Install bundle into site
         run: |
