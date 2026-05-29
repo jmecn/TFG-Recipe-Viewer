@@ -333,6 +333,14 @@ function validateBundleRoot(bundleRoot) {
   const fallbackLang = bundle.languages.includes('en_us') ? 'en_us' : bundle.languages[0];
   assertFile(bundleRoot, `lang/${fallbackLang}.json`);
   assertFile(bundleRoot, 'items/index.json');
+  assertFile(bundleRoot, 'categories/index.json');
+  const categoriesIndex = readJson(path.join(bundleRoot, 'categories/index.json'));
+  if (categoriesIndex.schema !== 1) {
+    fail(`categories/index.json schema expected 1, got ${categoriesIndex.schema}`);
+  }
+  if (!Array.isArray(categoriesIndex.categories) || categoriesIndex.categories.length === 0) {
+    fail('categories/index.json must contain a non-empty categories array');
+  }
 
   const itemsIndex = readJson(path.join(bundleRoot, 'items/index.json'));
   const itemIds = parseItemIdsFromIndex(itemsIndex);

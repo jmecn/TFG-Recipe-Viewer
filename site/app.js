@@ -100,6 +100,70 @@
     return (Array.isArray(ids) ? ids : []).filter((id) => !isEmiTagDisplayRecipe(id));
   }
 
+  function emiCategoryNameKey(categoryId) {
+    if (!categoryId) return 'emi.category.unknown';
+    return `emi.category.${String(categoryId).replace(':', '.').replace(/\//g, '.')}`;
+  }
+
+  function parseCategoriesManifest(raw) {
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.categories)) {
+      return { categories: [], byId: new Map(), order: [] };
+    }
+    const categories = raw.categories.filter((c) => c && typeof c.id === 'string');
+    categories.sort((a, b) => {
+      const ao = Number.isFinite(a.order) ? a.order : Number.MAX_SAFE_INTEGER;
+      const bo = Number.isFinite(b.order) ? b.order : Number.MAX_SAFE_INTEGER;
+      if (ao !== bo) return ao - bo;
+      const ap = Number.isFinite(a.priority) ? a.priority : 0;
+      const bp = Number.isFinite(b.priority) ? b.priority : 0;
+      if (ap !== bp) return ap - bp;
+      return a.id.localeCompare(b.id);
+    });
+    const byId = new Map();
+    const order = [];
+    for (const entry of categories) {
+      byId.set(entry.id, entry);
+      order.push(entry.id);
+    }
+    return { categories, byId, order };
+  }
+
+  function sortCategoryIds(categoryIds, manifest) {
+    const rank = new Map((manifest?.order || []).map((id, index) => [id, index]));
+    return [...categoryIds].sort((a, b) => {
+      const ai = rank.has(a) ? rank.get(a) : Number.MAX_SAFE_INTEGER;
+      const bi = rank.has(b) ? rank.get(b) : Number.MAX_SAFE_INTEGER;
+      if (ai !== bi) return ai - bi;
+      return a.localeCompare(b);
+    });
+  }
+
+  function recipeIdsForCategory(grouped, categoryId) {
+    if (!grouped || typeof grouped !== 'object' || !categoryId) return [];
+    return craftingRecipeIds(grouped[categoryId]);
+  }
+
+  function filterRecipeIds(ids, query) {
+    return (Array.isArray(ids) ? ids : []).filter((id) => !query || id.toLowerCase().includes(query));
+  }
+
+  function countGroupedRecipes(grouped, query) {
+    if (!grouped || typeof grouped !== 'object') return 0;
+    let total = 0;
+    for (const categoryId of Object.keys(grouped)) {
+      total += filterRecipeIds(recipeIdsForCategory(grouped, categoryId), query).length;
+    }
+    return total;
+  }
+
+  function visibleCategoryIds(grouped, manifest, query) {
+    if (!grouped || typeof grouped !== 'object') return [];
+    const ids = Object.keys(grouped).filter((categoryId) => (
+      filterRecipeIds(recipeIdsForCategory(grouped, categoryId), query).length > 0
+    ));
+    return sortCategoryIds(ids, manifest);
+  }
+
   function layoutPathForRecipeId(recipeId) {
     const file = String(recipeId || '').replace(/:/g, '_').replace(/\//g, '_') + '.json';
     return `recipes/layouts/${file}`;
@@ -180,6 +244,8 @@
       this.itemIds = [];
       this.itemIdSet = new Set();
       this.itemDetailCache = new Map();
+      this.categoriesManifest = null;
+      this.itemCategorySelection = { recipes: null, uses: null };
       this.mountSession = null;
       this.filterTimer = null;
       this.itemsPage = 1;
@@ -214,6 +280,8 @@
         detailPanelRecipes: document.getElementById('detail-panel-recipes'),
         detailPanelUses: document.getElementById('detail-panel-uses'),
         detailPanelTags: document.getElementById('detail-panel-tags'),
+        itemRecipeCategoryTabs: document.getElementById('item-recipe-category-tabs'),
+        itemUsesCategoryTabs: document.getElementById('item-uses-category-tabs'),
         itemRecipes: document.getElementById('item-recipes'),
         itemUses: document.getElementById('item-uses'),
         itemTagsList: document.getElementById('item-tags-list'),
@@ -334,19 +402,23 @@
       this.itemIds = [];
       this.itemIdSet = new Set();
       this.itemDetailCache.clear();
+      this.categoriesManifest = null;
+      this.itemCategorySelection = { recipes: null, uses: null };
       DEMO_JSON_CACHE.clear();
 
       const renderer = new EmiRecipeRenderer(this.rendererOptions());
-      const [recipeIndex, bundleRes, itemsRes] = await Promise.all([
+      const [recipeIndex, bundleRes, itemsRes, categoriesRes] = await Promise.all([
         renderer.loadIndex(),
         renderer.ensureBundle(),
         loadDemoJson(this.baseUrl, 'items/index.json', {}),
+        loadDemoJson(this.baseUrl, 'categories/index.json', null),
       ]);
       this.renderer = renderer;
       this.recipeIndex = recipeIndex;
       this.bundle = bundleRes;
       this.itemIds = parseItemsCatalog(itemsRes);
       this.itemIdSet = new Set(this.itemIds);
+      this.categoriesManifest = parseCategoriesManifest(categoriesRes);
       this.populateLocaleSelect();
       this.els.bundleSelect.value = bundleToken;
     }
@@ -368,6 +440,14 @@
     }
 
     async recipeExists(recipeId) {
+      if (this.renderer && this.recipeIndex) {
+        try {
+          await this.renderer.loadLayout(recipeId, this.recipeIndex);
+          return true;
+        } catch {
+          // fall through to legacy per-file layouts
+        }
+      }
       const layout = await loadDemoJson(this.baseUrl, layoutPathForRecipeId(recipeId), null);
       return Boolean(layout && typeof layout === 'object');
     }
@@ -603,6 +683,78 @@
       return detail;
     }
 
+    categoryLabel(categoryId) {
+      const entry = this.categoriesManifest?.byId?.get(categoryId);
+      const key = entry?.nameKey || emiCategoryNameKey(categoryId);
+      const label = this.renderer?.translateKey(key);
+      if (label && label !== key) return label;
+      const path = categoryId.includes(':') ? categoryId.slice(categoryId.indexOf(':') + 1) : categoryId;
+      return path
+        .replace(/[/_]/g, ' ')
+        .replace(/\b\w/g, (ch) => ch.toUpperCase());
+    }
+
+    applyItemRecipePanel(panelKey, grouped, query) {
+      const navEl = panelKey === 'recipes'
+        ? this.els.itemRecipeCategoryTabs
+        : this.els.itemUsesCategoryTabs;
+      const container = panelKey === 'recipes' ? this.els.itemRecipes : this.els.itemUses;
+      const emptyEl = panelKey === 'recipes' ? this.els.itemRecipesEmpty : this.els.itemUsesEmpty;
+      const categories = visibleCategoryIds(grouped, this.categoriesManifest, query);
+      const total = countGroupedRecipes(grouped, query);
+
+      emptyEl.hidden = total > 0;
+      if (categories.length === 0) {
+        navEl.hidden = true;
+        navEl.replaceChildren();
+        this.virtual[panelKey] = { ids: [], container, raf: 0 };
+        container.replaceChildren();
+        return;
+      }
+
+      let active = this.itemCategorySelection[panelKey];
+      if (!active || !categories.includes(active)) {
+        active = categories[0];
+        this.itemCategorySelection[panelKey] = active;
+      }
+
+      navEl.hidden = categories.length <= 1;
+      navEl.replaceChildren();
+      for (const categoryId of categories) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'emi-category-tab';
+        if (categoryId === active) {
+          btn.classList.add('is-active');
+          btn.setAttribute('aria-current', 'true');
+        }
+        const iconWrap = document.createElement('span');
+        iconWrap.className = 'emi-category-tab-icon';
+        const entry = this.categoriesManifest?.byId?.get(categoryId);
+        const iconRef = entry?.iconItem || entry?.iconKey;
+        if (iconRef && this.renderer) {
+          this.mountIconSpan(iconWrap, this.renderer, canonicalItemId(iconRef));
+        }
+        const label = document.createElement('span');
+        label.className = 'emi-category-tab-label';
+        label.textContent = this.categoryLabel(categoryId);
+        btn.title = label.textContent;
+        btn.append(iconWrap, label);
+        btn.addEventListener('click', () => {
+          if (this.itemCategorySelection[panelKey] === categoryId) return;
+          this.itemCategorySelection[panelKey] = categoryId;
+          this.applyItemRecipePanel(panelKey, grouped, normalizedFilterQuery(this.els.filter.value));
+          if (this.activeDetailTab === panelKey) {
+            void this.updateVirtualList(panelKey);
+          }
+        });
+        navEl.appendChild(btn);
+      }
+
+      const ids = filterRecipeIds(recipeIdsForCategory(grouped, active), query);
+      this.virtual[panelKey] = { ids, container, raf: 0 };
+    }
+
     switchDetailTab(tab) {
       this.detailScrollTop[this.activeDetailTab] = this.els.main.scrollTop;
       this.activeDetailTab = tab;
@@ -730,6 +882,7 @@
       this.currentItemId = canonicalItemId(itemId);
       if (isNewItem) {
         this.detailScrollTop = { recipes: 0, uses: 0, tags: 0 };
+        this.itemCategorySelection = { recipes: null, uses: null };
       }
       const canonicalId = canonicalItemId(itemId);
 
@@ -755,12 +908,10 @@
       this.els.itemDetailHeader.append(backBtn, iconWrap, text);
 
       const q = normalizedFilterQuery(this.els.filter.value);
-      const outputs = craftingRecipeIds(detail.outputs).filter((id) => !q || id.toLowerCase().includes(q));
-      const uses = craftingRecipeIds(detail.inputs).filter((id) => !q || id.toLowerCase().includes(q));
-      this.virtual.recipes = { ids: outputs, container: this.els.itemRecipes, raf: 0 };
-      this.virtual.uses = { ids: uses, container: this.els.itemUses, raf: 0 };
-      this.els.itemRecipesEmpty.hidden = outputs.length > 0;
-      this.els.itemUsesEmpty.hidden = uses.length > 0;
+      const outputsGrouped = detail.outputs && typeof detail.outputs === 'object' ? detail.outputs : {};
+      const inputsGrouped = detail.inputs && typeof detail.inputs === 'object' ? detail.inputs : {};
+      this.applyItemRecipePanel('recipes', outputsGrouped, q);
+      this.applyItemRecipePanel('uses', inputsGrouped, q);
 
       const tagEntries = [];
       const seen = new Set();

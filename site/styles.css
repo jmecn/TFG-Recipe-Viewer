@@ -264,6 +264,57 @@ body {
   contain-intrinsic-size: 200px 140px;
 }
 
+.emi-category-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.emi-category-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.2;
+}
+
+.emi-category-tab:hover {
+  border-color: var(--accent);
+}
+
+.emi-category-tab.is-active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.emi-category-tab-icon {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  align-items: center;
+  justify-content: center;
+}
+
+.emi-category-tab-icon .icon-atlas {
+  width: 18px;
+  height: 18px;
+}
+
+.emi-category-tab-label {
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
 #panel-item-detail .recipe-grid-compact {
   display: flex;
   flex-wrap: wrap;
