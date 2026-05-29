@@ -10,12 +10,15 @@ HMC_VER="${HMC_VERSION:?HMC_VERSION required}"
 launcher="headlessmc-launcher-${HMC_VER}.jar"
 
 mkdir -p "$MP/config" "$MP/saves" "$EXPORT_RAW"
+cp -f "$ROOT/ci/config/export-fml.toml" "$MP/config/fml.toml"
+cp -f "$ROOT/ci/config/export-forge-client.toml" "$MP/config/forge-client.toml"
 cat > "$MP/options.txt" <<EOF
 onboardAccessibility:false
 pauseOnLostFocus:false
 EOF
 
-xvfb-run -a java \
+cd "$ROOT"
+xvfb-run --server-args="-screen 0 1280x720x24" -a java \
   -Dhmc.check.xvfb=true \
   -jar "$launcher" \
   --command "launch .*forge.* -regex --jvm \"${MWE_JVM_FLAGS:?MWE_JVM_FLAGS required}\""

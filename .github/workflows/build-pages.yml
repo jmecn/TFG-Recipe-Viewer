@@ -13,8 +13,8 @@ on:
         description: emi-recipe-renderer npm version (empty = ci/build.env)
         required: false
         default: ""
-      optimize_ref:
-        description: emi-bundle-optimize git ref (empty = ci/build.env)
+      optimize_version:
+        description: emi-bundle-optimize npm version (empty = ci/build.env)
         required: false
         default: ""
       modpack_tag:
@@ -51,29 +51,18 @@ jobs:
       - name: Load CI config
         run: bash scripts/ci-load-config.sh
 
-      - name: Checkout emi-bundle-optimize
-        uses: actions/checkout@v4
-        with:
-          repository: jmecn/emi-bundle-optimize
-          ref: ${{ github.event.inputs.optimize_ref || env.OPTIMIZE_REF }}
-          path: emi-bundle-optimize
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            emi-bundle-optimize/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      - name: Prep emi-bundle-optimize (npm ci)
-        run: bash scripts/ci-prep-optimize.sh
-
-      - name: Prep viewer site (npm install + renderer lib)
+      - name: Prep Node (npm ci)
         env:
+          OPTIMIZE_VER: ${{ github.event.inputs.optimize_version || env.OPTIMIZE_VERSION }}
           RENDERER_VER: ${{ github.event.inputs.renderer_version || env.RENDERER_VERSION }}
-        run: bash scripts/ci-prep-site.sh
+        run: bash scripts/ci-prep-node.sh
 
       # --- Modpack + MC export (slow) ---
       - name: Checkout Modpack-Modern
@@ -170,10 +159,9 @@ jobs:
 
       # --- Optimize + finalize site (needs export on disk) ---
       - name: Optimize bundle
-        working-directory: emi-bundle-optimize
         run: |
-          bash ../scripts/ci-verify-emi-bundle.sh
-          node bin/cli.mjs optimize \
+          bash scripts/ci-verify-emi-bundle.sh
+          npx emi-bundle-optimize optimize \
             --in "${{ env.EXPORT_BUNDLE }}" \
             --out "${{ env.EXPORT_OPT_STAGING }}" \
             --force \
