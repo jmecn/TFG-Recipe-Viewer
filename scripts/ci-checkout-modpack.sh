@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Check out the latest Modpack-Modern *release* tag (semver x.y.z).
 # Clones TerraFirmaGreg-Team/Modpack-Modern when missing (CI-friendly).
-# Override: MODPACK_TAG=0.12.8 ./scripts/checkout-modpack-latest-release.sh
+# Override: MODPACK_TAG=0.12.8 ./scripts/ci-checkout-modpack.sh
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MP="${MODPACK_DIR:-$ROOT/Modpack-Modern}"
 MODPACK_REPO="${MODPACK_REPO:-https://github.com/TerraFirmaGreg-Team/Modpack-Modern.git}"
 

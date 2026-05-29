@@ -2,29 +2,29 @@ name: Build and deploy Pages
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "master"]
   workflow_dispatch:
     inputs:
       mwe_version:
-        description: minecraft-web-export release tag
+        description: minecraft-web-export release tag (empty = ci/build.env)
         required: false
-        default: "v0.2.2"
+        default: ""
       renderer_version:
-        description: emi-recipe-renderer npm version
+        description: emi-recipe-renderer npm version (empty = ci/build.env)
         required: false
-        default: "0.2.1"
+        default: ""
       optimize_ref:
-        description: emi-bundle-optimize git branch or commit
+        description: emi-bundle-optimize git ref (empty = ci/build.env)
         required: false
-        default: master
+        default: ""
       modpack_tag:
         description: Modpack-Modern semver tag (empty = latest release)
         required: false
         default: ""
       export_warmup_ticks:
-        description: Ticks after EMI is ready before export (20 TPS; 100 ≈ 5s)
+        description: Ticks after EMI is ready before export (empty = ci/build.env)
         required: false
-        default: "40"
+        default: ""
 
 permissions:
   contents: read
@@ -35,52 +35,41 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
-env:
-  RUNNER_HOME: /home/runner
-  JAVA_VERSION: "17"
-  MC_VERSION: "1.20.1"
-  MC_ASSET_INDEX: "5"
-  FORGE_BUILD: "47.4.13"
-  HMC_VERSION: "2.9.0"
-  MODPACK_DIR: Modpack-Modern
-  MWE_VERSION: v0.2.2
-  RENDERER_VERSION: "0.2.1"
-  OPTIMIZE_REF: master
-  EXPORT_RAW: ${{ github.workspace }}/export-raw
-  # EMI bundle root (bundle.json lives here, not under export-raw/)
-  EXPORT_BUNDLE: ${{ github.workspace }}/export-raw/emi
-  # Staging dir for optimize; install-bundle copy moves this into site/bundles/<id>
-  EXPORT_OPT_STAGING: ${{ github.workspace }}/export-opt
-
 jobs:
-  build:
+  export:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 150
+    outputs:
+      modpack_tag: ${{ steps.modpack.outputs.modpack_tag }}
+      bundle_id: ${{ steps.metadata.outputs.bundle_id }}
+      pakku_lock_hash: ${{ steps.metadata.outputs.pakku_lock_hash }}
+      emi_bundle_cache_key: ${{ steps.metadata.outputs.emi_bundle }}
+      emi_opt_cache_key: ${{ steps.metadata.outputs.emi_opt }}
     steps:
       - name: Checkout viewer
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Checkout Modpack-Modern at latest release tag
+      - name: Load CI config
+        run: bash scripts/ci-load-config.sh
+
+      - name: Checkout Modpack-Modern
         id: modpack
         env:
           MODPACK_TAG: ${{ github.event.inputs.modpack_tag }}
         run: |
-          chmod +x scripts/checkout-modpack-latest-release.sh
+          chmod +x scripts/ci-checkout-modpack.sh
           if [ -n "${MODPACK_TAG:-}" ]; then
             export MODPACK_TAG
           fi
-          bash scripts/checkout-modpack-latest-release.sh
+          bash scripts/ci-checkout-modpack.sh
 
-      - name: Log modpack version
-        run: echo "Modpack-Modern @ ${{ steps.modpack.outputs.modpack_tag }}"
-
-      - name: Set bundle id
-        id: bundle
-        run: |
-          id="tfg-${{ steps.modpack.outputs.modpack_tag }}"
-          echo "bundle_id=$id" >> "$GITHUB_OUTPUT"
+      - name: Prepare bundle metadata
+        id: metadata
+        env:
+          MODPACK_TAG: ${{ steps.modpack.outputs.modpack_tag }}
+        run: bash scripts/ci-prepare-metadata.sh
 
       - uses: actions/setup-java@v4
         with:
@@ -100,16 +89,16 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            Modpack-Modern/mods
-            Modpack-Modern/resourcepacks
-            Modpack-Modern/shaderpacks
-          key: pakku-${{ hashFiles('Modpack-Modern/pakku-lock.json') }}
+            ${{ env.MODPACK_DIR }}/mods
+            ${{ env.MODPACK_DIR }}/resourcepacks
+            ${{ env.MODPACK_DIR }}/shaderpacks
+          key: pakku-${{ hashFiles(format('{0}/pakku-lock.json', env.MODPACK_DIR)) }}
           restore-keys: |
             pakku-
 
       - name: Fetch modpack mods (cache miss only)
         if: steps.pakku-restore.outputs.cache-hit != 'true'
-        working-directory: Modpack-Modern
+        working-directory: ${{ env.MODPACK_DIR }}
         run: java -jar pakku.jar fetch
 
       - name: Save pakku cache (exact-key miss only)
@@ -117,56 +106,15 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-            Modpack-Modern/mods
-            Modpack-Modern/resourcepacks
-            Modpack-Modern/shaderpacks
+            ${{ env.MODPACK_DIR }}/mods
+            ${{ env.MODPACK_DIR }}/resourcepacks
+            ${{ env.MODPACK_DIR }}/shaderpacks
           key: ${{ steps.pakku-restore.outputs.cache-primary-key }}
 
-      - name: Resolve minecraft-web-export release
-        id: mwe
+      - name: Install minecraft-web-export
         env:
           MWE_TAG: ${{ github.event.inputs.mwe_version || env.MWE_VERSION }}
-        run: |
-          ver="${MWE_TAG#v}"
-          echo "tag=$MWE_TAG" >> "$GITHUB_OUTPUT"
-          echo "jar_name=minecraft-web-export-${ver}.jar" >> "$GITHUB_OUTPUT"
-
-      - name: Download minecraft-web-export jar
-        uses: robinraju/release-downloader@v1.11
-        with:
-          repository: jmecn/minecraft-web-export
-          tag: ${{ steps.mwe.outputs.tag }}
-          fileName: ${{ steps.mwe.outputs.jar_name }}
-          tarBall: false
-          zipBall: false
-
-      - name: Install minecraft-web-export into modpack
-        run: |
-          set -e
-          mp="${{ env.MODPACK_DIR }}"
-          mkdir -p "$mp/mods"
-          find "$mp/mods" -maxdepth 1 -name 'minecraft-web-export*.jar' -delete
-          find "$mp/mods" -maxdepth 1 -name 'field-guide*.jar' -delete
-          jar=$(ls minecraft-web-export-*.jar | head -1)
-          if [ -z "$jar" ]; then
-            echo "::error::No minecraft-web-export jar"
-            exit 1
-          fi
-          cp -v "$jar" "$mp/mods/"
-
-          cp="$mp/config/craftpresence.json"
-          if [ -f "$cp" ]; then
-            python3 - "$cp" <<'PY'
-          import json, sys
-          path = sys.argv[1]
-          with open(path) as f:
-              cfg = json.load(f)
-          cfg.setdefault("displaySettings", {}).setdefault("presenceData", {})["enabled"] = False
-          cfg.setdefault("advancedSettings", {})["maxConnectionAttempts"] = 1
-          with open(path, "w") as f:
-              json.dump(cfg, f, indent=2)
-          PY
-          fi
+        run: bash scripts/ci-install-mwe.sh
 
       - name: Restore HeadlessMC .minecraft
         id: hmc-restore
@@ -183,41 +131,18 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.MODPACK_DIR }}/saves/emi-export
-          key: emi-export-${{ env.MC_VERSION }}-${{ hashFiles('Modpack-Modern/pakku-lock.json') }}
+          key: emi-export-${{ env.MC_VERSION }}-${{ hashFiles(format('{0}/pakku-lock.json', env.MODPACK_DIR)) }}
           restore-keys: |
             emi-export-${{ env.MC_VERSION }}-
 
-      - name: Download HeadlessMC launcher
-        uses: robinraju/release-downloader@v1.11
-        with:
-          repository: 3arthqu4ke/headlessmc
-          tag: ${{ env.HMC_VERSION }}
-          fileName: headlessmc-launcher-${{ env.HMC_VERSION }}.jar
-
       - name: Setup HeadlessMC
-        run: |
-          set -e
-          mkdir -p HeadlessMC
-          cat > HeadlessMC/config.properties <<EOF
-          hmc.java.versions=$JAVA_HOME/bin/java
-          hmc.gamedir=$GITHUB_WORKSPACE/${{ env.MODPACK_DIR }}
-          hmc.offline=true
-          hmc.rethrow.launch.exceptions=true
-          hmc.exit.on.failed.command=true
-          EOF
-          mc_ver="${{ env.MC_VERSION }}"
-          forge="${{ env.FORGE_BUILD }}"
-          if [ ! -f "$HOME/.minecraft/versions/$mc_ver/$mc_ver.json" ]; then
-            java -jar "headlessmc-launcher-${{ env.HMC_VERSION }}.jar" --command "download $mc_ver"
-          fi
-          if ! ls "$HOME/.minecraft/versions" 2>/dev/null | grep -q "$forge"; then
-            java -jar "headlessmc-launcher-${{ env.HMC_VERSION }}.jar" --command "forge $mc_ver --uid $forge"
-          fi
+        run: bash scripts/ci-setup-hmc.sh
 
-      - name: Launch modpack under xvfb (EMI export, then exit)
+      - name: Launch modpack and verify EMI export
+        id: mc_launch
         env:
           ALSOFT_DRIVERS: "null"
-          EXPORT_WARMUP: ${{ github.event.inputs.export_warmup_ticks || '40' }}
+          EXPORT_WARMUP: ${{ github.event.inputs.export_warmup_ticks || env.EXPORT_WARMUP_TICKS }}
           MWE_JVM_FLAGS: >-
             -Xmx12G
             -Xms4G
@@ -228,48 +153,8 @@ jobs:
             -DminecraftWebExport.runExportAndExit=true
             -DminecraftWebExport.export.outputDir=${{ env.EXPORT_RAW }}
             -DminecraftWebExport.exportWarmupTicks=${{ env.EXPORT_WARMUP }}
-            -DminecraftWebExport.exportTimeoutSeconds=7200
-        run: |
-          set -e
-          mp="${{ env.MODPACK_DIR }}"
-          mkdir -p "$mp/config" "$mp/saves" "${{ env.EXPORT_RAW }}"
-          cat > "$mp/options.txt" <<EOF
-          onboardAccessibility:false
-          pauseOnLostFocus:false
-          EOF
-          xvfb-run -a java \
-            -Dhmc.check.xvfb=true \
-            -jar "headlessmc-launcher-${{ env.HMC_VERSION }}.jar" \
-            --command "launch .*forge.* -regex --jvm \"${MWE_JVM_FLAGS}\""
-
-      - name: Verify raw EMI export
-        run: |
-          test -f "${{ env.EXPORT_BUNDLE }}/bundle.json"
-          test -f "${{ env.EXPORT_BUNDLE }}/recipes/index.json"
-
-      - name: Checkout emi-bundle-optimize
-        uses: actions/checkout@v4
-        with:
-          repository: jmecn/emi-bundle-optimize
-          ref: ${{ github.event.inputs.optimize_ref || env.OPTIMIZE_REF }}
-          path: emi-bundle-optimize
-
-      - name: Setup Node (emi-bundle-optimize)
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: emi-bundle-optimize/package-lock.json
-
-      - name: Optimize bundle
-        working-directory: emi-bundle-optimize
-        run: |
-          npm ci
-          node bin/cli.mjs optimize \
-            --in "${{ env.EXPORT_BUNDLE }}" \
-            --out "${{ env.EXPORT_OPT_STAGING }}" \
-            --force \
-            --prune-lang
+            -DminecraftWebExport.exportTimeoutSeconds=${{ env.EXPORT_TIMEOUT_SECONDS }}
+        run: bash scripts/ci-launch-mc-export.sh
 
       - name: Save emi-export world cache
         if: success() && steps.emi-save-restore.outputs.cache-hit != 'true'
@@ -285,25 +170,118 @@ jobs:
           path: ${{ env.RUNNER_HOME }}/.minecraft
           key: ${{ steps.hmc-restore.outputs.cache-primary-key }}
 
+      - name: Save raw EMI bundle for optimize job
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.EXPORT_RAW }}/${{ env.EXPORT_BUNDLE_SUBDIR }}
+          key: ${{ steps.metadata.outputs.emi_bundle }}
+
+      - name: MC export debug — collect
+        if: failure()
+        run: bash scripts/ci-collect-export-debug.sh
+
+      - name: MC export debug — upload
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mc-export-debug
+          path: ci-debug/
+          if-no-files-found: ignore
+
+  optimize:
+    needs: export
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout viewer
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Load CI config
+        run: bash scripts/ci-load-config.sh
+
+      - name: Restore raw EMI bundle
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.EXPORT_RAW }}/${{ env.EXPORT_BUNDLE_SUBDIR }}
+          key: ${{ needs.export.outputs.emi_bundle_cache_key }}
+          fail-on-cache-miss: true
+
+      - name: Checkout emi-bundle-optimize
+        uses: actions/checkout@v4
+        with:
+          repository: jmecn/emi-bundle-optimize
+          ref: ${{ github.event.inputs.optimize_ref || env.OPTIMIZE_REF }}
+          path: emi-bundle-optimize
+
+      - name: Setup Node (emi-bundle-optimize)
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: emi-bundle-optimize/package-lock.json
+
+      - name: Optimize bundle
+        id: optimize
+        working-directory: emi-bundle-optimize
+        run: |
+          bash ../scripts/ci-verify-emi-bundle.sh
+          npm ci
+          node bin/cli.mjs optimize \
+            --in "${{ env.EXPORT_BUNDLE }}" \
+            --out "${{ env.EXPORT_OPT_STAGING }}" \
+            --force \
+            --prune-lang
+
+      - name: Save optimized bundle for assemble job
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.EXPORT_OPT_DIR }}
+          key: ${{ needs.export.outputs.emi_opt_cache_key }}
+
+      - name: Optimize debug — collect
+        if: failure()
+        run: bash scripts/ci-collect-export-debug.sh --phase optimize
+
+      - name: Optimize debug — upload
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: optimize-debug
+          path: ci-debug/
+          if-no-files-found: ignore
+
+  assemble:
+    needs: [export, optimize]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout viewer
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Load CI config
+        run: bash scripts/ci-load-config.sh
+
+      - name: Restore optimized bundle
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.EXPORT_OPT_DIR }}
+          key: ${{ needs.export.outputs.emi_opt_cache_key }}
+          fail-on-cache-miss: true
+
       - name: Assemble static site
         env:
           RENDERER_VER: ${{ github.event.inputs.renderer_version || env.RENDERER_VERSION }}
         run: |
           npm pkg set "dependencies.emi-recipe-renderer=${RENDERER_VER}"
           npm install
-          npm run copy -- --id "${{ steps.bundle.outputs.bundle_id }}" "${{ env.EXPORT_OPT_STAGING }}"
+          npm run copy -- --id "${{ needs.export.outputs.bundle_id }}" "${{ env.EXPORT_OPT_STAGING }}"
           npm run validate
-
-      - name: Upload raw export on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: export-raw-debug
-          path: |
-            export-raw/**
-            Modpack-Modern/logs/**
-            Modpack-Modern/crash-reports/**
-          if-no-files-found: ignore
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -314,7 +292,7 @@ jobs:
           path: site
 
   deploy:
-    needs: build
+    needs: assemble
     runs-on: ubuntu-latest
     environment:
       name: github-pages

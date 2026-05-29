@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Launch modpack under xvfb for EMI export, then verify raw bundle layout.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+MP="${MODPACK_DIR:-$ROOT/Modpack-Modern}"
+EXPORT_RAW="${EXPORT_RAW:?EXPORT_RAW required}"
+EXPORT_BUNDLE="${EXPORT_BUNDLE:?EXPORT_BUNDLE required}"
+HMC_VER="${HMC_VERSION:?HMC_VERSION required}"
+launcher="headlessmc-launcher-${HMC_VER}.jar"
+
+mkdir -p "$MP/config" "$MP/saves" "$EXPORT_RAW"
+cat > "$MP/options.txt" <<EOF
+onboardAccessibility:false
+pauseOnLostFocus:false
+EOF
+
+xvfb-run -a java \
+  -Dhmc.check.xvfb=true \
+  -jar "$launcher" \
+  --command "launch .*forge.* -regex --jvm \"${MWE_JVM_FLAGS:?MWE_JVM_FLAGS required}\""
+
+test -f "$EXPORT_BUNDLE/bundle.json"
+test -f "$EXPORT_BUNDLE/recipes/index.json"
