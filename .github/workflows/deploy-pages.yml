@@ -24,6 +24,10 @@ on:
         description: emi-recipe-renderer npm version (empty = ci/build.env)
         required: false
         default: ""
+      optimize_version:
+        description: emi-bundle-optimize npm version (empty = ci/build.env)
+        required: false
+        default: ""
   workflow_run:
     workflows: ["Export EMI bundle"]
     types: [completed]
@@ -45,7 +49,7 @@ jobs:
     if: >-
       github.event_name != 'workflow_run'
       || github.event.workflow_run.conclusion == 'success'
-    timeout-minutes: 30
+    timeout-minutes: 120
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -88,19 +92,24 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Prep Node (renderer + validate)
+      - name: Prep Node
         env:
           RENDERER_VER: ${{ github.event.inputs.renderer_version || env.RENDERER_VERSION }}
-          OPTIMIZE_VER: ${{ env.OPTIMIZE_VERSION }}
+          OPTIMIZE_VER: ${{ github.event.inputs.optimize_version || env.OPTIMIZE_VERSION }}
         run: bash scripts/ci-prep-node.sh
 
-      - name: Restore bundle cache
-        id: bundle-cache
+      - name: Restore raw bundle cache
+        id: raw-cache
         uses: actions/cache/restore@v4
         with:
-          path: site/bundles/${{ steps.metadata.outputs.bundle_id }}
-          key: emi-bundle-${{ steps.metadata.outputs.bundle_id }}
+          path: ${{ env.EXPORT_BUNDLE }}
+          key: emi-raw-${{ steps.metadata.outputs.bundle_id }}
           fail-on-cache-miss: true
+
+      - name: Optimize and stage bundle
+        env:
+          BUNDLE_ID: ${{ steps.metadata.outputs.bundle_id }}
+        run: bash scripts/ci-optimize-and-stage-bundle.sh
 
       - name: Prepare site for deploy
         env:

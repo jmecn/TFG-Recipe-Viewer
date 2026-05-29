@@ -132,9 +132,15 @@
     return Object.keys(out).length ? out : null;
   }
 
+  function mergedLangTable(renderer) {
+    const active = renderer?._activeLang;
+    if (!active) return null;
+    return { ...active.fallback, ...active.current };
+  }
+
   function displayNameForId(renderer, id) {
     const bare = canonicalItemId(id);
-    const langTable = renderer._activeLang?.current || null;
+    const langTable = mergedLangTable(renderer);
     const asItem = renderer.translateRegistry(id, 'item');
     if (asItem && asItem !== bare) return asItem;
     const asFluid = renderer.translateRegistry(id, 'fluid');
@@ -727,6 +733,14 @@
     mountIconSpan(wrap, renderer, itemId, options = {}) {
       const key = options.atlasKey ? String(itemId) : canonicalItemId(itemId);
       wrap.replaceChildren(renderer.createAtlasSpanForIconKey(key));
+      const span = wrap.querySelector('.icon-atlas');
+      const displayPx = options.displayPx;
+      if (span && Number.isFinite(displayPx) && displayPx > 0) {
+        const cell = renderer.iconAtlas?.cellSize || 32;
+        const scale = displayPx / cell;
+        span.style.transform = `scale(${scale})`;
+        span.style.transformOrigin = 'top left';
+      }
       wrap.dataset.iconMounted = '1';
     }
 
@@ -848,11 +862,14 @@
         const entry = this.categoriesManifest?.byId?.get(categoryId);
         const iconRef = entry?.iconKey || entry?.iconItem;
         if (iconRef && this.renderer) {
-          this.mountIconSpan(iconWrap, this.renderer, iconRef, { atlasKey: String(iconRef).includes('@') });
+          this.mountIconSpan(iconWrap, this.renderer, iconRef, {
+            atlasKey: String(iconRef).includes('@'),
+            displayPx: 16,
+          });
         }
         const label = document.createElement('span');
         label.className = 'emi-category-tab-label';
-        label.textContent = this.categoryLabel(categoryId);
+        setFormattedText(label, this.categoryLabel(categoryId));
         btn.title = label.textContent;
         btn.append(iconWrap, label);
         btn.addEventListener('click', () => {

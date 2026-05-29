@@ -297,17 +297,22 @@ body {
 }
 
 .emi-category-tab-icon {
-  display: inline-flex;
+  display: inline-block;
   width: 16px;
   height: 16px;
   flex: 0 0 16px;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;
+  vertical-align: middle;
+  position: relative;
 }
 
+/* createAtlasSpanForIconKey sets inline 32px; scale into 16px slot (same idea as .emi-slot-icon). */
 .emi-category-tab-icon .icon-atlas {
-  width: 16px;
-  height: 16px;
+  display: block;
+  transform: scale(0.5);
+  transform-origin: top left;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
 .emi-category-tab-label {

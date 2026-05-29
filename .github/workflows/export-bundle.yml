@@ -7,10 +7,6 @@ on:
         description: minecraft-web-export release tag (empty = ci/build.env)
         required: false
         default: ""
-      optimize_version:
-        description: emi-bundle-optimize npm version (empty = ci/build.env)
-        required: false
-        default: ""
       modpack_tag:
         description: Modpack-Modern semver tag (empty = latest release)
         required: false
@@ -49,9 +45,9 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Prep Node (optimize CLI only)
+      - name: Prep Node (validate CLI only)
         env:
-          OPTIMIZE_VER: ${{ github.event.inputs.optimize_version || env.OPTIMIZE_VERSION }}
+          OPTIMIZE_VER: ${{ env.OPTIMIZE_VERSION }}
           RENDERER_VER: ${{ env.RENDERER_VERSION }}
         run: bash scripts/ci-prep-node.sh
 
@@ -144,29 +140,11 @@ jobs:
           path: ${{ env.RUNNER_HOME }}/.minecraft
           key: ${{ steps.hmc-restore.outputs.cache-primary-key }}
 
-      - name: Optimize bundle
-        env:
-          NODE_OPTIONS: --trace-uncaught
-        run: |
-          bash scripts/ci-verify-emi-bundle.sh
-          echo "::group::emi-bundle-optimize"
-          npx emi-bundle-optimize optimize \
-            --in "${{ env.EXPORT_BUNDLE }}" \
-            --out "${{ env.EXPORT_OPT_STAGING }}" \
-            --force \
-            --prune-lang
-          echo "::endgroup::"
-
-      - name: Install bundle into site
-        run: |
-          npm run copy -- --id "${{ steps.metadata.outputs.bundle_id }}" "${{ env.EXPORT_OPT_STAGING }}"
-          npm run validate -- "site/bundles/${{ steps.metadata.outputs.bundle_id }}"
-
-      - name: Save bundle cache
+      - name: Save raw bundle cache
         uses: actions/cache/save@v4
         with:
-          path: site/bundles/${{ steps.metadata.outputs.bundle_id }}
-          key: emi-bundle-${{ steps.metadata.outputs.bundle_id }}
+          path: ${{ env.EXPORT_BUNDLE }}
+          key: emi-raw-${{ steps.metadata.outputs.bundle_id }}
 
       - name: Write export metadata
         env:
@@ -181,9 +159,23 @@ jobs:
           path: export-meta/
           retention-days: 90
 
+      - name: Tar raw export
+        run: |
+          ARCHIVE="emi-raw-${{ steps.metadata.outputs.bundle_id }}.tar.gz"
+          tar -czf "$ARCHIVE" -C "${{ env.EXPORT_RAW }}" "${{ env.EXPORT_BUNDLE_SUBDIR }}"
+          ls -lh "$ARCHIVE"
+
+      - name: Upload raw export
+        uses: actions/upload-artifact@v4
+        with:
+          name: emi-raw-${{ steps.metadata.outputs.bundle_id }}
+          path: emi-raw-${{ steps.metadata.outputs.bundle_id }}.tar.gz
+          retention-days: 30
+          compression-level: 0
+
       - name: Build debug — collect
         if: failure()
-        run: bash scripts/ci-collect-export-debug.sh --phase optimize
+        run: bash scripts/ci-collect-export-debug.sh --phase export
 
       - name: Build debug — upload
         if: failure()

@@ -7,7 +7,7 @@ BUNDLE_ID="${BUNDLE_ID:?BUNDLE_ID required}"
 BUNDLE_ROOT="$ROOT/site/bundles/$BUNDLE_ID"
 
 if [[ ! -f "$BUNDLE_ROOT/bundle.json" ]]; then
-  echo "::error::Missing bundle at site/bundles/$BUNDLE_ID — run Export EMI bundle workflow first." >&2
+  echo "::error::Missing bundle at site/bundles/$BUNDLE_ID — run Deploy Pages (needs emi-raw-$BUNDLE_ID cache from Export)." >&2
   exit 1
 fi
 
