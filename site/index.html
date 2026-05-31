@@ -7,7 +7,7 @@
   <meta name="emi-renderer-version" content="0.5.0">
   <script src="site-base.js"></script>
   <link id="emi-style" rel="stylesheet" href="">
-  <link rel="stylesheet" href="styles.css?v=21">
+  <link rel="stylesheet" href="styles.css?v=22">
   <script>
     (function () {
       const params = new URLSearchParams(location.search);
@@ -23,7 +23,15 @@
     })();
   </script>
 </head>
-<body>
+<body class="is-booting">
+  <div id="app-boot" class="app-boot" role="status" aria-live="polite" aria-busy="true">
+    <div class="app-boot-card">
+      <p class="app-boot-title">Recipe Viewer</p>
+      <div class="app-boot-spinner" aria-hidden="true"></div>
+      <p id="app-boot-status" class="app-boot-status">正在启动…</p>
+    </div>
+  </div>
+
   <header class="site-header">
     <div class="site-header-inner">
       <a class="site-brand" href="#" data-site-home title="Recipe Viewer home">
@@ -144,7 +152,7 @@
           return;
         }
         const boot = document.createElement('script');
-        boot.src = 'app.js?v=24';
+        boot.src = 'app.js?v=26';
         boot.onerror = function () {
           showError('Failed to load app.js from this site. Check GitHub Pages deploy includes site/app.js.');
         };

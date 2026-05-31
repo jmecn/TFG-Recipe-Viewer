@@ -39,6 +39,108 @@
     return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
   }
 
+  const ASSET_CACHE = 'tfg-recipe-viewer-v1';
+  const FALLBACK_LOCALE = 'en_us';
+
+  const Boot = {
+    ensure() {
+      if (!this.root) {
+        this.root = document.getElementById('app-boot');
+        this.statusEl = document.getElementById('app-boot-status');
+      }
+    },
+    setStatus(text) {
+      this.ensure();
+      if (this.statusEl) this.statusEl.textContent = text;
+    },
+    finish() {
+      this.ensure();
+      document.body.classList.remove('is-booting');
+      if (this.root) {
+        this.root.classList.add('is-hidden');
+        this.root.setAttribute('aria-busy', 'false');
+      }
+    },
+  };
+
+  async function fetchWithAssetCache(url) {
+    if (typeof caches !== 'undefined') {
+      try {
+        const cache = await caches.open(ASSET_CACHE);
+        const hit = await cache.match(url);
+        if (hit) return { response: hit, fromCache: true };
+        const response = await fetch(url);
+        if (response.ok) await cache.put(url, response.clone());
+        return { response, fromCache: false };
+      } catch {
+        /* fall through */
+      }
+    }
+    const response = await fetch(url);
+    return { response, fromCache: false };
+  }
+
+  /** Warm bundle.json, lang, icon index/css, and priority atlas pages (Cache API + HTTP cache). */
+  async function warmBundleAssets(baseUrl, locale, onStatus) {
+    onStatus?.('正在加载 bundle…');
+    const bundleWrap = await fetchWithAssetCache(joinBase(baseUrl, 'bundle.json'));
+    let bundle = {};
+    try {
+      bundle = await bundleWrap.response.json();
+    } catch {
+      bundle = {};
+    }
+
+    const activeLocale = String(locale || FALLBACK_LOCALE).trim() || FALLBACK_LOCALE;
+    const langCodes = new Set([FALLBACK_LOCALE, activeLocale]);
+    for (const code of bundle.languages || []) {
+      if (typeof code === 'string' && code.length) langCodes.add(code);
+    }
+
+    onStatus?.('正在加载语言…');
+    await Promise.all([...langCodes].map(async (code) => {
+      await fetchWithAssetCache(joinBase(baseUrl, `lang/${code}.json`));
+    }));
+
+    onStatus?.('正在加载图标…');
+    const indexWrap = await fetchWithAssetCache(joinBase(baseUrl, 'icons/index.json'));
+    let index = null;
+    try {
+      index = await indexWrap.response.json();
+    } catch {
+      index = null;
+    }
+    await fetchWithAssetCache(joinBase(baseUrl, 'icons/icons.css'));
+    await fetchWithAssetCache(joinBase(baseUrl, 'textures/manifest.json'));
+    await Promise.all([
+      fetchWithAssetCache(joinBase(baseUrl, 'textures/emi/textures/gui/background.png')),
+      fetchWithAssetCache(joinBase(baseUrl, 'textures/emi/textures/gui/widgets.png')),
+    ]);
+
+    const preloadUrls = [];
+    const pages = Array.isArray(index?.pages) ? index.pages : [];
+    for (let i = 0; i < pages.length; i += 1) {
+      const page = pages[i];
+      const sources = Array.isArray(page?.sources) && page.sources.length
+        ? page.sources
+        : ((page?.file || page?.src) ? [{ file: page.file || page.src }] : []);
+      const file = sources[0]?.file || sources[0]?.src;
+      if (!file) continue;
+      if (page?.preload === true || i === 0) {
+        preloadUrls.push(joinBase(baseUrl, `icons/${file}`));
+      }
+    }
+
+    if (preloadUrls.length) {
+      onStatus?.('正在预热图标图集…');
+      await Promise.all(preloadUrls.map((url) => fetchWithAssetCache(url)));
+    }
+
+    const cachedHint = bundleWrap.fromCache ? '（已缓存）' : '';
+    onStatus?.(`正在进入…${cachedHint}`);
+    return bundle;
+  }
+
   function loadDemoJson(baseUrl, path, fallbackValue) {
     const key = joinBase(baseUrl, path);
     if (!DEMO_JSON_CACHE.has(key)) {
@@ -81,11 +183,8 @@
     const id = canonicalItemId(itemId);
     const sep = id.indexOf(':');
     if (sep <= 0 || sep >= id.length - 1) return [];
-    const paths = [
-      `items/${id.slice(0, sep)}/${id.slice(sep + 1)}.json`,
-      `items/fluid/${id}.json`,
-    ];
-    return [...new Set(paths)];
+    // v2 bundle: item + fluid reverse index share items/<namespace>/<path>.json (see EmiItemsIndexExporter).
+    return [`items/${id.slice(0, sep)}/${id.slice(sep + 1)}.json`];
   }
 
   function mergeItemDetails(details) {
@@ -491,7 +590,7 @@
       }
     }
 
-    async ensureBundle(bundleToken) {
+    async ensureBundle(bundleToken, options = {}) {
       const resolved = this.resolveBundle(bundleToken);
       if (!resolved) throw new Error(`Unknown bundle: ${bundleToken}`);
       if (resolved === this.bundleId && bundleToken === this.bundleToken) return;
@@ -510,6 +609,10 @@
       this.invalidateItemSearchIndex();
       DEMO_JSON_CACHE.clear();
 
+      const onStatus = typeof options.onStatus === 'function' ? options.onStatus : null;
+      await warmBundleAssets(this.baseUrl, this.locale, onStatus);
+
+      onStatus?.('正在加载物品索引…');
       const renderer = new EmiRecipeRenderer(this.rendererOptions());
       const [recipeIndex, bundleRes, itemsRes, categoriesRes] = await Promise.all([
         renderer.loadIndex(),
@@ -517,6 +620,8 @@
         loadDemoJson(this.baseUrl, 'items/index.json', {}),
         loadDemoJson(this.baseUrl, 'categories/index.json', null),
       ]);
+      onStatus?.('正在应用图标样式…');
+      await renderer.ensureIconStylesheets();
       this.renderer = renderer;
       this.recipeIndex = recipeIndex;
       this.bundle = bundleRes;
@@ -644,7 +749,7 @@
       this.currentRoute = { ...this.currentRoute, search: route.search, lang: route.lang };
     }
 
-    async syncRouteFromLocation() {
+    async syncRouteFromLocation(options = {}) {
       try {
         const route = parseLocationQuery();
         if (route.lang) {
@@ -652,7 +757,9 @@
           localStorage.setItem(STORAGE_LOCALE, this.locale);
         }
         this.els.filter.value = route.search;
-        await this.ensureBundle(route.bundleToken);
+        await this.ensureBundle(route.bundleToken, {
+          onStatus: options.onStatus,
+        });
         if (route.view !== 'items' && route.id) {
           const ok = await this.routeTargetExists(route.view, route.id);
           if (!ok) {
@@ -1262,11 +1369,14 @@
   async function bootVerifier() {
     global.normalizeSitePath?.();
     const errEl = document.getElementById('demo-error');
+    Boot.ensure();
     try {
+      Boot.setStatus('正在读取站点配置…');
       const catalog = await loadBundleCatalog();
       const app = new RecipeViewer(catalog);
-      await app.syncRouteFromLocation();
+      await app.syncRouteFromLocation({ onStatus: (msg) => Boot.setStatus(msg) });
       global.recipeViewer = app;
+      Boot.finish();
       document.getElementById('tag-popover')?.addEventListener('click', (e) => {
         if (e.target.id === 'tag-popover') hideEmiTagPopover();
       });
@@ -1274,6 +1384,7 @@
         if (e.key === 'Escape') hideEmiTagPopover();
       });
     } catch (e) {
+      Boot.finish();
       if (errEl) {
         errEl.hidden = false;
         errEl.textContent = e?.message || String(e);
