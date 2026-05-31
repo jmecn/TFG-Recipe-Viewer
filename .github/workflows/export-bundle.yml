@@ -83,9 +83,12 @@ jobs:
         run: java -jar pakku.jar fetch
 
       - name: Install minecraft-web-export
+        id: mwe
         env:
           MWE_TAG: ${{ github.event.inputs.mwe_version || env.MWE_VERSION }}
-        run: bash scripts/ci-install-mwe.sh
+        run: |
+          bash scripts/ci-install-mwe.sh
+          echo "tag=${MWE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Restore HeadlessMC .minecraft
         id: hmc-restore
@@ -140,11 +143,12 @@ jobs:
           path: ${{ env.RUNNER_HOME }}/.minecraft
           key: ${{ steps.hmc-restore.outputs.cache-primary-key }}
 
-      - name: Save raw bundle cache
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.EXPORT_BUNDLE }}
-          key: emi-raw-${{ steps.metadata.outputs.bundle_id }}
+      # Raw bundle is published via artifact below (not Actions cache — cache/save can fail with
+      # "Unable to reserve cache" while the job still succeeds; Deploy must not rely on it).
+
+      - name: Log exported bundle.json
+        run: |
+          node -e "const b=require(process.argv[1]); console.log('bundle.json schema', b.schema, 'imageScale', b.imageScale)" "${{ env.EXPORT_BUNDLE }}/bundle.json"
 
       - name: Write export metadata
         env:

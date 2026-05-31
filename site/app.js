@@ -8,6 +8,7 @@
 
   const STORAGE_LOCALE = 'emiRendererDemoLocale';
   const ITEMS_PER_PAGE = 60;
+  const ITEM_SEARCH_INDEX_CHUNK = 250;
   const TAG_MEMBERS_PER_PAGE = 60;
   const ITEM_FILTER_HINT = 'Filter item id or name...';
   const DETAIL_FILTER_HINT = 'Filter recipe id...';
@@ -173,6 +174,16 @@
 
   function normalizedFilterQuery(input) {
     return String(input || '').trim().toLowerCase();
+  }
+
+  function yieldToMain() {
+    return new Promise((resolve) => {
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(() => resolve(), { timeout: 80 });
+      } else {
+        setTimeout(resolve, 0);
+      }
+    });
   }
 
   function itemDetailPath(itemId) {
@@ -344,7 +355,10 @@
       this.detailScrollTop = { recipes: 0, uses: 0, tags: 0 };
       this.tagMembersPage = 1;
       this.tagMembersAll = [];
-      this.displayNameCache = new Map();
+      this.itemSearchRows = null;
+      this.itemSearchBuildGen = 0;
+      this.itemSearchIndexDone = 0;
+      this.itemSearchIndexTotal = 0;
       this.virtual = {
         recipes: { ids: [], container: null, raf: 0 },
         uses: { ids: [], container: null, raf: 0 },
@@ -493,7 +507,7 @@
       this.itemDetailCache.clear();
       this.categoriesManifest = null;
       this.itemCategorySelection = { recipes: null, uses: null };
-      this.displayNameCache.clear();
+      this.invalidateItemSearchIndex();
       DEMO_JSON_CACHE.clear();
 
       const renderer = new EmiRecipeRenderer(this.rendererOptions());
@@ -511,6 +525,7 @@
       this.categoriesManifest = parseCategoriesManifest(categoriesRes);
       this.populateLocaleSelect();
       this.els.bundleSelect.value = bundleToken;
+      this.scheduleItemSearchIndexBuild();
     }
 
     itemExists(itemId) {
@@ -683,30 +698,81 @@
     async onLocaleChange() {
       this.locale = this.els.locale.value;
       localStorage.setItem(STORAGE_LOCALE, this.locale);
-      this.displayNameCache.clear();
+      this.invalidateItemSearchIndex();
       this.syncQueryFromUi(true);
       await this.ensureRenderer();
+      this.scheduleItemSearchIndexBuild();
       await this.syncRouteFromLocation();
     }
 
-    itemDisplayNameLower(id) {
-      if (!this.renderer) return '';
-      let cached = this.displayNameCache.get(id);
-      if (cached === undefined) {
-        cached = stripFormattedText(displayNameForId(this.renderer, id)).toLowerCase();
-        this.displayNameCache.set(id, cached);
+    invalidateItemSearchIndex() {
+      this.itemSearchBuildGen += 1;
+      this.itemSearchRows = null;
+      this.itemSearchIndexDone = 0;
+      this.itemSearchIndexTotal = 0;
+    }
+
+    scheduleItemSearchIndexBuild() {
+      const gen = this.itemSearchBuildGen;
+      void (async () => {
+        if (!this.itemIds.length) return;
+        const renderer = await this.ensureRenderer().catch(() => null);
+        if (!renderer || gen !== this.itemSearchBuildGen) return;
+        await this.buildItemSearchIndex(renderer, gen);
+      })();
+    }
+
+    async buildItemSearchIndex(renderer, gen) {
+      const ids = this.itemIds;
+      const rows = new Array(ids.length);
+      this.itemSearchIndexTotal = ids.length;
+      this.itemSearchIndexDone = 0;
+      let i = 0;
+      while (i < ids.length) {
+        if (gen !== this.itemSearchBuildGen) return;
+        const end = Math.min(i + ITEM_SEARCH_INDEX_CHUNK, ids.length);
+        for (; i < end; i++) {
+          const id = ids[i];
+          const idLower = id.toLowerCase();
+          const name = stripFormattedText(displayNameForId(renderer, id)).toLowerCase();
+          rows[i] = {
+            id,
+            haystack: name && name !== idLower ? `${idLower} ${name}` : idLower,
+          };
+        }
+        this.itemSearchIndexDone = i;
+        await yieldToMain();
       }
-      return cached;
+      if (gen !== this.itemSearchBuildGen) return;
+      this.itemSearchRows = rows;
+      if (this.currentRoute.view === 'items' && normalizedFilterQuery(this.els.filter.value)) {
+        void this.renderItems();
+      }
+    }
+
+    itemsFilterSummary(matchCount) {
+      const base = `${matchCount} items`;
+      const q = normalizedFilterQuery(this.els.filter.value);
+      if (!q) return base;
+      if (this.itemSearchRows && this.itemSearchRows.length === this.itemIds.length) return base;
+      const total = this.itemSearchIndexTotal || this.itemIds.length;
+      const done = this.itemSearchIndexDone;
+      if (done < total) return `${base} (id only; names ${done}/${total})`;
+      return base;
     }
 
     filteredItemIds() {
       const q = normalizedFilterQuery(this.els.filter.value);
       if (!q) return this.itemIds;
-      return this.itemIds.filter((id) => {
-        const idLower = id.toLowerCase();
-        if (idLower.includes(q)) return true;
-        return this.itemDisplayNameLower(id).includes(q);
-      });
+      const rows = this.itemSearchRows;
+      if (rows && rows.length === this.itemIds.length) {
+        const out = [];
+        for (let i = 0; i < rows.length; i++) {
+          if (rows[i].haystack.includes(q)) out.push(rows[i].id);
+        }
+        return out;
+      }
+      return this.itemIds.filter((id) => id.toLowerCase().includes(q));
     }
 
     createLazyIconWrap(itemId) {
@@ -775,7 +841,7 @@
       this.renderPager(this.els.itemPager, {
         current: this.itemsPage,
         total: totalPages,
-        summary: `${allIds.length} items`,
+        summary: this.itemsFilterSummary(allIds.length),
         onPage: (page) => {
           this.itemsPage = page;
           void this.renderItems();
