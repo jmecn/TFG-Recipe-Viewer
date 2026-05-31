@@ -29,7 +29,7 @@ if [[ -z "$run_id" ]]; then
   exit 1
 fi
 
-rm -rf emi
+rm -rf emi "emi-raw-${BUNDLE_ID}.tar.gz"
 gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n "$ARTIFACT_NAME" -D .
 bash "$ROOT/scripts/ci-extract-raw-bundle-artifact.sh"
 echo "Installed from Export run $run_id (artifact ${ARTIFACT_NAME})"
