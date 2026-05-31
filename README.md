@@ -6,8 +6,8 @@ TerraFirmaGreg Modern 配方静态浏览站：由 GitHub Actions 从 [Modpack-Mo
 
 | 数据来源 | 内容 | 何时使用 |
 |----------|------|----------|
-| Artifact `emi-raw-<bundle_id>.tar.gz` | 当次 Export 的 raw bundle（**唯一可靠来源**） | Export 触发的 Deploy；手动 Deploy 会尝试拉最近一次 Export |
-| Actions cache | **已不再写入**（`cache/save` 常 reservation 失败且 job 仍绿） | 仅作手动 Deploy 的兜底，可能是 schema 1 旧数据 |
+| Artifact `emi-raw-<bundle_id>.tar.gz` | 当次 / 最近一次 Export 的 raw bundle | **Deploy 唯一来源**（`workflow_run` 下当次；手动 Deploy 用 `gh` 拉最近成功 Export） |
+| （无 raw Actions cache） | Export 不再 `cache/save` raw；Deploy **不** `cache/restore` | 避免命中 schema 1 旧条目 |
 | （无 optimized cache） | optimize 在 Deploy 时从 raw 现算 | **Deploy Pages** |
 
 ## 本地开发（已有 bundle）
@@ -38,7 +38,7 @@ npm run optimize -- --in /path/to/export-raw/emi --out /path/to/export-opt --for
 
 ### 1. Export EMI bundle（重，几小时）
 
-Modpack → HeadlessMC 全量 EMI 导出 → 校验 → **Cache save** + 上传 **Artifacts**（`export-meta` + `emi-raw-<bundle_id>.tar.gz`）→ 自动触发 Deploy（Deploy **解压当次 artifact**，不依赖旧 cache）。
+Modpack → HeadlessMC 全量 EMI 导出 → 校验 → 上传 **Artifacts**（`export-meta` + `emi-raw-<bundle_id>.tar.gz`）→ 自动触发 Deploy（**仅**解压该 artifact）。
 
 Actions → **Export EMI bundle** → Run workflow
 
@@ -46,7 +46,7 @@ Actions → **Export EMI bundle** → Run workflow
 
 ### 2. Deploy Pages（中轻，常跑）
 
-`workflow_run`：从当次 Export **artifact** 解压 raw；其它触发：从 Actions **cache** restore → **optimize** → 写入 `site/bundles/` → 部署 `site/`。
+`workflow_run`：下载当次 Export **artifact** 并解压；其它触发：`gh` 拉最近一次 Export **artifact** → **optimize** → 写入 `site/bundles/` → 部署 `site/`。
 
 触发：
 
@@ -61,7 +61,7 @@ Actions → **Export EMI bundle** → Run workflow
 | 只升 `RENDERER_VERSION` | **Deploy Pages** |
 | modpack / MWE 导出 / 新配方数据 | **Export EMI bundle**（再 Deploy） |
 
-**注意**：Export 触发的 Deploy 用 **artifact**，与 cache 是否过期无关。仅 **手动/push Deploy** 依赖 cache；cache miss 时需先 Export 或改 workflow 用 artifact。
+**注意**：Deploy **从不**读取 `emi-raw-*` Actions cache。手动 Deploy 前需有一次成功的 Export（保留 `emi-raw-<bundle_id>` artifact）。
 
 ## 路由
 

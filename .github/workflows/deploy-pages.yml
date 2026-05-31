@@ -98,8 +98,7 @@ jobs:
           OPTIMIZE_VER: ${{ github.event.inputs.optimize_version || env.OPTIMIZE_VERSION }}
         run: bash scripts/ci-prep-node.sh
 
-      # Source of truth: Export artifact (emi-raw-<bundle_id>.tar.gz). Export cache/save may warn-fail
-      # ("Unable to reserve cache") while the job still succeeds — Deploy must not use stale cache only.
+      # Raw bundle: Export artifact only (no actions/cache restore — stale schema-1 caches are ignored).
 
       - name: Download raw bundle artifact from triggering Export
         if: github.event_name == 'workflow_run'
@@ -117,36 +116,15 @@ jobs:
 
       - name: Download raw bundle from latest Export (manual / push)
         if: github.event_name != 'workflow_run'
-        id: raw-artifact-fetch
         env:
           BUNDLE_ID: ${{ steps.metadata.outputs.bundle_id }}
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
-        continue-on-error: true
         run: bash scripts/ci-fetch-raw-bundle-for-deploy.sh
 
-      - name: Restore raw bundle cache (fallback only)
-        if: github.event_name != 'workflow_run' && steps.raw-artifact-fetch.outcome != 'success'
-        id: raw-cache
-        continue-on-error: true
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.EXPORT_BUNDLE }}
-          key: ${{ env.EMI_RAW_CACHE_KEY_PREFIX }}-${{ env.MWE_VERSION }}-${{ steps.metadata.outputs.bundle_id }}
-          restore-keys: |
-            emi-raw-${{ steps.metadata.outputs.bundle_id }}
-
-      - name: Require raw bundle
-        env:
-          BUNDLE_ID: ${{ steps.metadata.outputs.bundle_id }}
-        run: |
-          if [[ -f "${{ env.EXPORT_BUNDLE }}/bundle.json" ]]; then
-            node -e "const b=require(process.argv[1]); console.log('raw bundle OK — schema', b.schema, 'imageScale', b.imageScale)" "${{ env.EXPORT_BUNDLE }}/bundle.json"
-            exit 0
-          fi
-          echo "::error::No raw bundle at ${{ env.EXPORT_BUNDLE }}. Run Export EMI bundle; use the emi-raw-${BUNDLE_ID} artifact (cache save is not reliable)." >&2
-          exit 1
+      - name: Verify raw bundle (schema 2)
+        run: bash scripts/ci-verify-emi-bundle.sh
 
       - name: Optimize and stage bundle
         env:

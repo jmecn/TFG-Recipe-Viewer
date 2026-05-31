@@ -8,7 +8,7 @@ RAW="${EXPORT_BUNDLE:?EXPORT_BUNDLE required}"
 OUT="${EXPORT_OPT_STAGING:?EXPORT_OPT_STAGING required}"
 
 if [[ ! -f "$RAW/bundle.json" ]]; then
-  echo "::error::Raw bundle missing at $RAW — run Export EMI bundle first (emi-raw-$BUNDLE_ID cache)." >&2
+  echo "::error::Raw bundle missing at $RAW — run Export EMI bundle and ensure Deploy downloaded emi-raw-$BUNDLE_ID.tar.gz artifact." >&2
   exit 1
 fi
 

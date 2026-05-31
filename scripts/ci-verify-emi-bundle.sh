@@ -14,7 +14,7 @@ fi
 schema="$(node -e "const b=require(process.argv[1]); console.log(b.schema??'')" "$BUNDLE_JSON")"
 if [[ "$schema" != "2" ]]; then
   echo "::error::bundle.json schema must be 2 (got: ${schema:-<missing>})." >&2
-  echo "::error::Raw bundle is not schema 2. Re-run Export EMI bundle (MWE ${MWE_VERSION:-?}); Deploy must use emi-raw-* artifact, not stale Actions cache." >&2
+  echo "::error::Raw bundle is not schema 2. Re-run Export EMI bundle (MWE ${MWE_VERSION:-?}); Deploy uses emi-raw-* artifact only." >&2
   exit 1
 fi
 

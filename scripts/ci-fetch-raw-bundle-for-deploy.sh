@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Obtain raw EMI bundle for Deploy: download latest successful Export artifact.
-# Exit 0 on success, 2 when artifact unavailable (caller may try Actions cache).
+# Obtain raw EMI bundle for Deploy: download latest successful Export artifact (only source).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,26 +15,25 @@ if [[ -f "$ARCHIVE" ]]; then
 fi
 
 if ! command -v gh >/dev/null 2>&1; then
-  echo "gh CLI not available; cannot download Export artifact"
-  exit 2
+  echo "::error::gh CLI not available; cannot download Export artifact" >&2
+  exit 1
 fi
 
 token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 if [[ -z "$token" ]]; then
-  echo "GH_TOKEN/GITHUB_TOKEN not set; cannot download Export artifact"
-  exit 2
+  echo "::error::GH_TOKEN/GITHUB_TOKEN not set; cannot download Export artifact" >&2
+  exit 1
 fi
 
 repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY required}"
-branch="${GITHUB_REF_NAME:-master}"
 
-echo "Searching successful Export EMI bundle runs on ${repo}@${branch} ..."
+echo "Searching successful Export EMI bundle runs on ${repo} ..."
 mapfile -t run_ids < <(gh run list \
   --repo "$repo" \
   --workflow "Export EMI bundle" \
-  --branch "$branch" \
   --status success \
-  --limit 15 \
+  --limit 20 \
+  --json databaseId \
   -q '.[].databaseId')
 
 for run_id in "${run_ids[@]}"; do
@@ -48,5 +46,5 @@ for run_id in "${run_ids[@]}"; do
   fi
 done
 
-echo "No emi-raw-${BUNDLE_ID} artifact found in recent Export runs"
-exit 2
+echo "::error::No emi-raw-${BUNDLE_ID}.tar.gz in recent successful Export EMI bundle runs. Run Export first; Deploy does not use Actions cache." >&2
+exit 1
