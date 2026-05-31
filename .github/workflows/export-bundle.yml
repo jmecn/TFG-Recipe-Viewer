@@ -163,17 +163,12 @@ jobs:
           path: export-meta/
           retention-days: 90
 
-      - name: Tar raw export
-        run: |
-          ARCHIVE="emi-raw-${{ steps.metadata.outputs.bundle_id }}.tar.gz"
-          tar -czf "$ARCHIVE" -C "${{ env.EXPORT_RAW }}" "${{ env.EXPORT_BUNDLE_SUBDIR }}"
-          ls -lh "$ARCHIVE"
-
+      # Upload export-raw/ so artifact zip contains emi/ (matches browser download layout).
       - name: Upload raw export
         uses: actions/upload-artifact@v4
         with:
           name: emi-raw-${{ steps.metadata.outputs.bundle_id }}
-          path: emi-raw-${{ steps.metadata.outputs.bundle_id }}.tar.gz
+          path: ${{ env.EXPORT_RAW }}
           retention-days: 30
           compression-level: 0
 

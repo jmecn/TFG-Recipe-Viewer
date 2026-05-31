@@ -1,50 +1,35 @@
 #!/usr/bin/env bash
-# Obtain raw EMI bundle for Deploy: download latest successful Export artifact (only source).
+# Download artifact emi-raw-<bundle_id> from the latest successful Export run.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUNDLE_ID="${BUNDLE_ID:?BUNDLE_ID required}"
-EXPORT_RAW="${EXPORT_RAW:?EXPORT_RAW required}"
+ARTIFACT_NAME="emi-raw-${BUNDLE_ID}"
 
-ARCHIVE="emi-raw-${BUNDLE_ID}.tar.gz"
-
-if [[ -f "$ARCHIVE" ]]; then
-  echo "Using raw bundle artifact: $ARCHIVE"
-  bash "$ROOT/scripts/ci-extract-raw-bundle-artifact.sh"
+if [[ -f "${EXPORT_RAW:?EXPORT_RAW required}/emi/bundle.json" ]]; then
+  echo "Raw bundle already at ${EXPORT_RAW}/emi"
   exit 0
 fi
 
-if ! command -v gh >/dev/null 2>&1; then
-  echo "::error::gh CLI not available; cannot download Export artifact" >&2
+if ! command -v gh >/dev/null 2>&1 || [[ -z "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]]; then
+  echo "::error::gh CLI and GITHUB_TOKEN required to download artifact ${ARTIFACT_NAME}" >&2
   exit 1
 fi
 
-token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-if [[ -z "$token" ]]; then
-  echo "::error::GH_TOKEN/GITHUB_TOKEN not set; cannot download Export artifact" >&2
-  exit 1
-fi
-
-repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY required}"
-
-echo "Searching successful Export EMI bundle runs on ${repo} ..."
-mapfile -t run_ids < <(gh run list \
-  --repo "$repo" \
+run_id="$(gh run list \
+  --repo "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY required}" \
   --workflow "Export EMI bundle" \
   --status success \
-  --limit 20 \
+  --limit 1 \
   --json databaseId \
-  -q '.[].databaseId')
+  -q '.[0].databaseId')"
 
-for run_id in "${run_ids[@]}"; do
-  [[ -z "$run_id" ]] && continue
-  rm -f "$ARCHIVE"
-  if gh run download "$run_id" --repo "$repo" -n "$ARCHIVE" -D . 2>/dev/null && [[ -f "$ARCHIVE" ]]; then
-    echo "Downloaded $ARCHIVE from Export run $run_id"
-    bash "$ROOT/scripts/ci-extract-raw-bundle-artifact.sh"
-    exit 0
-  fi
-done
+if [[ -z "$run_id" ]]; then
+  echo "::error::No successful Export EMI bundle run found" >&2
+  exit 1
+fi
 
-echo "::error::No emi-raw-${BUNDLE_ID}.tar.gz in recent successful Export EMI bundle runs. Run Export first; Deploy does not use Actions cache." >&2
-exit 1
+rm -rf emi
+gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n "$ARTIFACT_NAME" -D .
+bash "$ROOT/scripts/ci-extract-raw-bundle-artifact.sh"
+echo "Installed from Export run $run_id (artifact ${ARTIFACT_NAME})"

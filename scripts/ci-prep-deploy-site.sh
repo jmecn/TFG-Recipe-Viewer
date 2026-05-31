@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Finalize site/ for Pages deploy after bundle cache restore (no MC export).
+# Finalize site/ for Pages deploy after bundle is staged under site/bundles/.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
