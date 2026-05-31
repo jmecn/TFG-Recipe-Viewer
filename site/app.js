@@ -8,7 +8,6 @@
 
   const STORAGE_LOCALE = 'emiRendererDemoLocale';
   const ITEMS_PER_PAGE = 60;
-  const ITEM_SEARCH_INDEX_CHUNK = 250;
   const TAG_MEMBERS_PER_PAGE = 60;
   const ITEM_FILTER_HINT = 'Filter item id or name...';
   const DETAIL_FILTER_HINT = 'Filter recipe id...';
@@ -136,6 +135,9 @@
       await Promise.all(preloadUrls.map((url) => fetchWithAssetCache(url)));
     }
 
+    onStatus?.('正在加载物品搜索索引…');
+    await fetchWithAssetCache(joinBase(baseUrl, `items-search/${activeLocale}.json`));
+
     const cachedHint = bundleWrap.fromCache ? '（已缓存）' : '';
     onStatus?.(`正在进入…${cachedHint}`);
     return bundle;
@@ -165,6 +167,10 @@
   function catalogIdFromIndexEntry(ns, path) {
     if (path.includes(':')) return path;
     return `${ns}:${path}`;
+  }
+
+  function normalizeLocale(locale) {
+    return String(locale || FALLBACK_LOCALE).trim().toLowerCase().replace('-', '_');
   }
 
   function parseItemsCatalog(raw) {
@@ -455,9 +461,6 @@
       this.tagMembersPage = 1;
       this.tagMembersAll = [];
       this.itemSearchRows = null;
-      this.itemSearchBuildGen = 0;
-      this.itemSearchIndexDone = 0;
-      this.itemSearchIndexTotal = 0;
       this.virtual = {
         recipes: { ids: [], container: null, raf: 0 },
         uses: { ids: [], container: null, raf: 0 },
@@ -630,7 +633,7 @@
       this.categoriesManifest = parseCategoriesManifest(categoriesRes);
       this.populateLocaleSelect();
       this.els.bundleSelect.value = bundleToken;
-      this.scheduleItemSearchIndexBuild();
+      await this.loadItemsSearchIndex();
     }
 
     itemExists(itemId) {
@@ -805,56 +808,47 @@
     async onLocaleChange() {
       this.locale = this.els.locale.value;
       localStorage.setItem(STORAGE_LOCALE, this.locale);
-      this.invalidateItemSearchIndex();
+      this.itemSearchRows = null;
       this.syncQueryFromUi(true);
       await this.ensureRenderer();
-      this.scheduleItemSearchIndexBuild();
+      const loaded = await this.loadItemsSearchIndex();
+      if (loaded && this.currentRoute.view === 'items' && normalizedFilterQuery(this.els.filter.value)) {
+        void this.renderItems();
+      }
       await this.syncRouteFromLocation();
     }
 
     invalidateItemSearchIndex() {
-      this.itemSearchBuildGen += 1;
       this.itemSearchRows = null;
-      this.itemSearchIndexDone = 0;
-      this.itemSearchIndexTotal = 0;
     }
 
-    scheduleItemSearchIndexBuild() {
-      const gen = this.itemSearchBuildGen;
-      void (async () => {
-        if (!this.itemIds.length) return;
-        const renderer = await this.ensureRenderer().catch(() => null);
-        if (!renderer || gen !== this.itemSearchBuildGen) return;
-        await this.buildItemSearchIndex(renderer, gen);
-      })();
-    }
-
-    async buildItemSearchIndex(renderer, gen) {
-      const ids = this.itemIds;
-      const rows = new Array(ids.length);
-      this.itemSearchIndexTotal = ids.length;
-      this.itemSearchIndexDone = 0;
-      let i = 0;
-      while (i < ids.length) {
-        if (gen !== this.itemSearchBuildGen) return;
-        const end = Math.min(i + ITEM_SEARCH_INDEX_CHUNK, ids.length);
-        for (; i < end; i++) {
-          const id = ids[i];
-          const idLower = id.toLowerCase();
-          const name = stripFormattedText(displayNameForId(renderer, id)).toLowerCase();
-          rows[i] = {
-            id,
-            haystack: name && name !== idLower ? `${idLower} ${name}` : idLower,
-          };
+    async loadItemsSearchIndex() {
+      if (!this.itemIds.length) {
+        this.itemSearchRows = null;
+        return false;
+      }
+      const loc = normalizeLocale(this.locale);
+      const data = await loadDemoJson(this.baseUrl, `items-search/${loc}.json`, null);
+      if (!data?.items?.length) {
+        this.itemSearchRows = null;
+        return false;
+      }
+      const idToHay = new Map();
+      for (const row of data.items) {
+        if (row?.id && row.haystack != null) {
+          idToHay.set(row.id, String(row.haystack).toLowerCase());
         }
-        this.itemSearchIndexDone = i;
-        await yieldToMain();
       }
-      if (gen !== this.itemSearchBuildGen) return;
+      const rows = new Array(this.itemIds.length);
+      for (let i = 0; i < this.itemIds.length; i++) {
+        const id = this.itemIds[i];
+        rows[i] = {
+          id,
+          haystack: idToHay.get(id) ?? id.toLowerCase(),
+        };
+      }
       this.itemSearchRows = rows;
-      if (this.currentRoute.view === 'items' && normalizedFilterQuery(this.els.filter.value)) {
-        void this.renderItems();
-      }
+      return true;
     }
 
     itemsFilterSummary(matchCount) {
@@ -862,10 +856,7 @@
       const q = normalizedFilterQuery(this.els.filter.value);
       if (!q) return base;
       if (this.itemSearchRows && this.itemSearchRows.length === this.itemIds.length) return base;
-      const total = this.itemSearchIndexTotal || this.itemIds.length;
-      const done = this.itemSearchIndexDone;
-      if (done < total) return `${base} (id only; names ${done}/${total})`;
-      return base;
+      return `${base} (id only; run emi-bundle-optimize for name search)`;
     }
 
     filteredItemIds() {

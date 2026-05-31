@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Recipe Viewer</title>
-  <meta name="emi-renderer-version" content="0.5.0">
+  <meta name="emi-renderer-version" content="0.5.2">
   <script src="site-base.js"></script>
   <link id="emi-style" rel="stylesheet" href="">
   <link rel="stylesheet" href="styles.css?v=22">
@@ -152,7 +152,7 @@
           return;
         }
         const boot = document.createElement('script');
-        boot.src = 'app.js?v=26';
+        boot.src = 'app.js?v=27';
         boot.onerror = function () {
           showError('Failed to load app.js from this site. Check GitHub Pages deploy includes site/app.js.');
         };
