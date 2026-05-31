@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Recipe Viewer</title>
-  <meta name="emi-renderer-version" content="0.4.3">
+  <meta name="emi-renderer-version" content="0.5.0">
   <script src="site-base.js"></script>
   <link id="emi-style" rel="stylesheet" href="">
   <link rel="stylesheet" href="styles.css?v=21">
@@ -143,28 +143,12 @@
           showError('EmiRecipeRenderer missing after script load.');
           return;
         }
-        const mcScript = document.createElement('script');
-        mcScript.src = siteUrl('minecraft-text.js');
-        mcScript.onload = function () {
-          const gtScript = document.createElement('script');
-          gtScript.src = siteUrl('gtceu-translate.js');
-          gtScript.onload = function () {
-            const boot = document.createElement('script');
-            boot.src = 'app.js?v=22';
-            boot.onerror = function () {
-              showError('Failed to load app.js from this site. Check GitHub Pages deploy includes site/app.js.');
-            };
-            document.body.appendChild(boot);
-          };
-          gtScript.onerror = function () {
-            showError('Failed to load gtceu-translate.js from this site.');
-          };
-          document.body.appendChild(gtScript);
+        const boot = document.createElement('script');
+        boot.src = 'app.js?v=24';
+        boot.onerror = function () {
+          showError('Failed to load app.js from this site. Check GitHub Pages deploy includes site/app.js.');
         };
-        mcScript.onerror = function () {
-          showError('Failed to load minecraft-text.js from this site.');
-        };
-        document.body.appendChild(mcScript);
+        document.body.appendChild(boot);
       };
       document.body.appendChild(script);
     })();

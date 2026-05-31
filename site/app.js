@@ -132,36 +132,13 @@
     return Object.keys(out).length ? out : null;
   }
 
-  function mergedLangTable(renderer) {
-    const active = renderer?._activeLang;
-    if (!active) return null;
-    return { ...active.fallback, ...active.current };
-  }
-
   function displayNameForId(renderer, id) {
     const bare = canonicalItemId(id);
-    const langTable = mergedLangTable(renderer);
     const asItem = renderer.translateRegistry(id, 'item');
     if (asItem && asItem !== bare) return asItem;
     const asFluid = renderer.translateRegistry(id, 'fluid');
     if (asFluid && asFluid !== bare) return asFluid;
-    if (global.GtceuTranslate?.composeRegistry) {
-      const composedItem = global.GtceuTranslate.composeRegistry(
-        bare,
-        'item',
-        (key) => renderer.translateKey(key),
-        langTable,
-      );
-      if (composedItem) return composedItem;
-      const composedFluid = global.GtceuTranslate.composeRegistry(
-        bare,
-        'fluid',
-        (key) => renderer.translateKey(key),
-        langTable,
-      );
-      if (composedFluid) return composedFluid;
-    }
-    return asFluid || bare;
+    return bare;
   }
 
   function stripFormattedText(text) {
@@ -553,16 +530,13 @@
     }
 
     async recipeExists(recipeId) {
-      if (this.renderer && this.recipeIndex) {
-        try {
-          await this.renderer.loadLayout(recipeId, this.recipeIndex);
-          return true;
-        } catch {
-          // fall through to legacy per-file layouts
-        }
+      try {
+        const renderer = await this.ensureRenderer();
+        await renderer.loadRecipeMeta(recipeId);
+        return true;
+      } catch {
+        return false;
       }
-      const layout = await loadDemoJson(this.baseUrl, layoutPathForRecipeId(recipeId), null);
-      return Boolean(layout && typeof layout === 'object');
     }
 
     async routeTargetExists(view, id) {
@@ -973,16 +947,6 @@
         container.replaceChildren();
         return;
       }
-      if (this.isDetailRecipeContainer(container)) {
-        const frag = document.createDocumentFragment();
-        for (const recipeId of ids) {
-          frag.appendChild(this.makeRecipeCard(recipeId));
-        }
-        container.replaceChildren(frag);
-        await this.mountRecipeGrid(container);
-        return;
-      }
-
       const mainTop = this.els.main.scrollTop;
       const containerTop = container.offsetTop;
       const viewHeight = this.els.main.clientHeight;
