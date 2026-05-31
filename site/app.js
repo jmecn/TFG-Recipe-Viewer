@@ -856,7 +856,7 @@
       const q = normalizedFilterQuery(this.els.filter.value);
       if (!q) return base;
       if (this.itemSearchRows && this.itemSearchRows.length === this.itemIds.length) return base;
-      return `${base} (id only; run emi-bundle-optimize for name search)`;
+      return `${base} (id only; items-search missing — re-export bundle)`;
     }
 
     filteredItemIds() {

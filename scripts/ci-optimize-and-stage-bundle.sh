@@ -19,7 +19,6 @@ npx emi-bundle-optimize optimize \
   --in "$RAW" \
   --out "$OUT" \
   --force \
-  --prune-lang \
   --no-recipe-webp
 echo "::endgroup::"
 npm run copy -- --id "$BUNDLE_ID" "$OUT"
