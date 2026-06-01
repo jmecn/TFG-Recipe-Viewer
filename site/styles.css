@@ -277,10 +277,16 @@ body.is-booting .app-main {
   border: none;
   background: transparent;
   color: var(--text);
+  color-scheme: dark;
   font-size: 0.85rem;
   max-width: 11rem;
   padding: 4px 2px;
   cursor: pointer;
+}
+
+.header-select option {
+  background: var(--panel);
+  color: var(--text);
 }
 
 .header-select:focus {
