@@ -15,6 +15,6 @@ cd "$ROOT"
 bash scripts/ci-patch-renderer-version.sh
 npm run copy -- --id "$BUNDLE_ID" "$BUNDLE_ROOT"
 npm run validate
-test -f site/app.js
+test -f site/js/main.js
 
 echo "Deploy site ready (bundle: $BUNDLE_ID)"

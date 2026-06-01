@@ -7,13 +7,17 @@
     "node": ">=18"
   },
   "scripts": {
-    "postinstall": "node scripts/sync-renderer-lib.mjs",
+    "postinstall": "node scripts/sync-renderer-lib.mjs && node scripts/sync-language-config.mjs",
     "sync-lib": "node scripts/sync-renderer-lib.mjs",
+    "sync-language": "node scripts/sync-language-config.mjs",
+    "sync-lib:workspace": "node scripts/sync-renderer-lib-workspace.mjs",
+    "dev:profile": "node scripts/setup-dev-profile.mjs",
     "copy": "node scripts/install-bundle.mjs copy",
     "validate": "node scripts/validate-bundle.mjs",
     "optimize": "emi-bundle-optimize optimize",
     "serve": "npx serve -s site -l ${PORT:-8768}",
-    "start": "npm run sync-lib && npm run validate && npm run serve"
+    "dev": "npm run dev:profile && npm run sync-lib:workspace && npm run sync-language && npm run serve",
+    "start": "npm run sync-lib && npm run sync-language && npm run validate && npm run serve"
   },
   "dependencies": {
     "emi-bundle-optimize": "^0.4.2",

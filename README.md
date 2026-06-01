@@ -56,7 +56,7 @@ Actions → **Export EMI bundle** → Run workflow
 
 | 变更类型 | 需要跑的 workflow |
 |---------|-------------------|
-| 只改 `site/app.js`、CSS | **Deploy Pages**（拉 Export artifact，重跑 optimize） |
+| 只改 `site/js/`、`site/styles.css` | **Deploy Pages**（拉 Export artifact，重跑 optimize） |
 | 只升 `OPTIMIZE_VERSION` / prune 规则 | **Deploy Pages**（不必重导 MC） |
 | 只升 `RENDERER_VERSION` | **Deploy Pages** |
 | modpack / MWE 导出 / 新配方数据 | **Export EMI bundle**（再 Deploy） |

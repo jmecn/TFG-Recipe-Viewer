@@ -90,6 +90,10 @@ jobs:
           bash scripts/ci-install-mwe.sh
           echo "tag=${MWE_TAG}" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve export languages
+        id: export_languages
+        run: bash scripts/ci-resolve-export-languages.sh
+
       - name: Restore HeadlessMC .minecraft
         id: hmc-restore
         uses: actions/cache/restore@v4
@@ -116,6 +120,7 @@ jobs:
         env:
           ALSOFT_DRIVERS: "null"
           EXPORT_WARMUP: ${{ github.event.inputs.export_warmup_ticks || env.EXPORT_WARMUP_TICKS }}
+          EXPORT_LANGUAGES: ${{ steps.export_languages.outputs.export_languages }}
           MWE_JVM_FLAGS: >-
             -Xmx12G
             -Xms4G
@@ -127,6 +132,7 @@ jobs:
             -DminecraftWebExport.export.outputDir=${{ env.EXPORT_RAW }}
             -DminecraftWebExport.exportWarmupTicks=${{ env.EXPORT_WARMUP }}
             -DminecraftWebExport.exportTimeoutSeconds=${{ env.EXPORT_TIMEOUT_SECONDS }}
+            -DminecraftWebExport.exportLanguages=${{ env.EXPORT_LANGUAGES }}
         run: bash scripts/ci-launch-mc-export.sh
 
       - name: Save emi-export world cache

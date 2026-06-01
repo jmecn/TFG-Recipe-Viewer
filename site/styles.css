@@ -11,9 +11,16 @@
   box-sizing: border-box;
 }
 
+html {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100%;
+  max-height: 100vh;
+  overflow: hidden;
   font-family: system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
@@ -22,7 +29,7 @@ body {
 }
 
 body.is-booting .site-header,
-body.is-booting .demo-main {
+body.is-booting .app-main {
   visibility: hidden;
 }
 
@@ -65,6 +72,22 @@ body.is-booting .demo-main {
   animation: app-boot-spin 0.85s linear infinite;
 }
 
+.app-boot-progress {
+  width: min(280px, 70vw);
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.app-boot-progress-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #5aa8ff 0%, #7fc4ff 100%);
+  transition: width 220ms ease;
+}
+
 @keyframes app-boot-spin {
   to {
     transform: rotate(360deg);
@@ -76,6 +99,63 @@ body.is-booting .demo-main {
   font-size: 0.9rem;
   color: var(--muted);
   line-height: 1.45;
+}
+
+.app-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 190;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.app-transition.is-visible {
+  opacity: 1;
+}
+
+.app-transition-card {
+  margin-top: 74px;
+  width: min(360px, 78vw);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
+}
+
+.app-transition-status {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 0.84rem;
+}
+
+.app-transition-progress {
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.app-transition-progress-fill {
+  height: 100%;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #5aa8ff 0%, #8ad8ff 100%);
+  animation: app-transition-indeterminate 1s ease-in-out infinite;
+}
+
+@keyframes app-transition-indeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
 }
 
 .site-header {
@@ -207,7 +287,7 @@ body.is-booting .demo-main {
   outline: none;
 }
 
-.demo-error {
+.app-error {
   margin: 0;
   padding: 8px 14px;
   font-size: 0.85rem;
@@ -231,7 +311,7 @@ body.is-booting .demo-main {
   }
 }
 
-.demo-main {
+.app-main {
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -240,7 +320,7 @@ body.is-booting .demo-main {
   container-name: viewer-main;
 }
 
-.demo-panel[hidden] {
+.app-panel[hidden] {
   display: none !important;
 }
 
@@ -392,8 +472,77 @@ body.is-booting .demo-main {
   content-visibility: visible;
 }
 
+#panel-item-detail .recipe-grid-compact.is-loading {
+  transition: opacity 120ms ease;
+}
+
+#panel-item-detail .recipe-grid-compact.is-loading:empty::before {
+  content: "";
+  display: block;
+  width: min(360px, 100%);
+  height: 150px;
+  border-radius: 8px;
+  border: 1px solid rgba(124, 158, 208, 0.2);
+  background: linear-gradient(90deg, #1d1f29 0%, #262a36 45%, #1d1f29 100%);
+  background-size: 240% 100%;
+  animation: emi-recipe-pending-shimmer 1.05s linear infinite;
+}
+
 .recipe-card-stage {
   display: block;
+}
+
+#panel-item-detail .recipe-grid-compact.is-loading .recipe-card-stage {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Shimmer only on cards that are not mounted yet — not the whole visible window. */
+#panel-item-detail .recipe-card-stage.emi-recipe-pending,
+#panel-item-detail .recipe-card-stage:not([data-emi-mounted="1"]) {
+  position: relative;
+  overflow: hidden;
+}
+
+#panel-item-detail .recipe-grid-compact.is-loading .recipe-card-stage:not([data-emi-mounted="1"])::before,
+#panel-item-detail .recipe-card-stage.emi-recipe-pending::before,
+#panel-item-detail .recipe-card-stage:not([data-emi-mounted="1"])::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #1d1f29 0%, #262a36 45%, #1d1f29 100%);
+  background-size: 240% 100%;
+  animation: emi-recipe-pending-shimmer 1.05s linear infinite;
+  pointer-events: none;
+}
+
+.emi-recipe.emi-recipe-pending {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #1d1f29 0%, #262a36 45%, #1d1f29 100%);
+  background-size: 240% 100%;
+  animation: emi-recipe-pending-shimmer 1.05s linear infinite;
+}
+
+.emi-recipe.emi-recipe-pending::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(124, 158, 208, 0.22);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+@keyframes emi-recipe-pending-shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
 }
 
 .recipe-card-id {
@@ -517,7 +666,7 @@ body.is-booting .demo-main {
   margin-bottom: 12px;
 }
 
-.demo-back {
+.app-back {
   padding: 6px 12px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -527,7 +676,7 @@ body.is-booting .demo-main {
   font-size: 0.85rem;
 }
 
-.demo-back:hover {
+.app-back:hover {
   border-color: var(--accent);
 }
 
@@ -605,6 +754,10 @@ body.is-booting .demo-main {
 .item-detail-title {
   margin: 0;
   font-size: 1.1rem;
+}
+
+.item-detail-title.is-loading {
+  color: var(--muted);
 }
 
 .item-detail-id {
@@ -685,14 +838,14 @@ body.is-booting .demo-main {
   pointer-events: none;
 }
 
-.demo-section-title {
+.app-section-title {
   margin: 0 0 10px;
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--muted);
 }
 
-.demo-empty {
+.app-empty {
   margin: 0 0 20px;
   font-size: 0.85rem;
   color: var(--muted);
