@@ -36,7 +36,7 @@ jobs:
           fetch-depth: 1
 
       - name: Load CI config
-        run: bash scripts/ci-load-config.sh
+        run: bash scripts/ci.sh load-config
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -49,21 +49,19 @@ jobs:
         env:
           OPTIMIZE_VER: ${{ env.OPTIMIZE_VERSION }}
           RENDERER_VER: ${{ env.RENDERER_VERSION }}
-        run: bash scripts/ci-prep-node.sh
+        run: bash scripts/ci.sh prep-node
 
       - name: Checkout Modpack-Modern
         id: modpack
         env:
           MODPACK_TAG: ${{ github.event.inputs.modpack_tag || env.MODPACK_TAG }}
-        run: |
-          chmod +x scripts/ci-checkout-modpack.sh
-          bash scripts/ci-checkout-modpack.sh
+        run: bash scripts/ci.sh checkout-modpack
 
       - name: Prepare bundle metadata
         id: metadata
         env:
           MODPACK_TAG: ${{ steps.modpack.outputs.modpack_tag }}
-        run: bash scripts/ci-prepare-metadata.sh
+        run: bash scripts/ci.sh prepare-metadata
 
       - uses: actions/setup-java@v4
         with:
@@ -87,12 +85,12 @@ jobs:
         env:
           MWE_TAG: ${{ github.event.inputs.mwe_version || env.MWE_VERSION }}
         run: |
-          bash scripts/ci-install-mwe.sh
+          bash scripts/ci.sh install-mwe
           echo "tag=${MWE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve export languages
         id: export_languages
-        run: bash scripts/ci-resolve-export-languages.sh
+        run: bash scripts/ci.sh resolve-export-languages
 
       - name: Restore HeadlessMC .minecraft
         id: hmc-restore
@@ -114,7 +112,7 @@ jobs:
             emi-export-${{ env.MC_VERSION }}-
 
       - name: Setup HeadlessMC
-        run: bash scripts/ci-setup-hmc.sh
+        run: bash scripts/ci.sh setup-hmc
 
       - name: Launch modpack and verify EMI export
         env:
@@ -132,7 +130,7 @@ jobs:
             -DminecraftWebExport.exportWarmupTicks=${{ github.event.inputs.export_warmup_ticks || env.EXPORT_WARMUP_TICKS }}
             -DminecraftWebExport.exportTimeoutSeconds=${{ env.EXPORT_TIMEOUT_SECONDS }}
             -DminecraftWebExport.exportLanguages=${{ steps.export_languages.outputs.export_languages }}
-        run: bash scripts/ci-launch-mc-export.sh
+        run: bash scripts/ci.sh launch-mc-export
 
       - name: Save emi-export world cache
         if: success() && steps.emi-save-restore.outputs.cache-hit != 'true'
@@ -159,7 +157,7 @@ jobs:
         env:
           BUNDLE_ID: ${{ steps.metadata.outputs.bundle_id }}
           MODPACK_TAG: ${{ steps.modpack.outputs.modpack_tag }}
-        run: bash scripts/ci-write-export-meta.sh
+        run: bash scripts/ci.sh write-export-meta
 
       - name: Upload export metadata
         uses: actions/upload-artifact@v4
@@ -184,7 +182,7 @@ jobs:
 
       - name: Build debug — collect
         if: failure()
-        run: bash scripts/ci-collect-export-debug.sh --phase export
+        run: bash scripts/ci.sh collect-export-debug --phase export
 
       - name: Build debug — upload
         if: failure()

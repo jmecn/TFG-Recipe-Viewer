@@ -1,4 +1,4 @@
-# Shared Modpack-Modern tag resolution (source from other ci/*.sh scripts).
+# Shared Modpack-Modern tag resolution (source from ci/*.sh).
 MODPACK_REPO="${MODPACK_REPO:-https://github.com/TerraFirmaGreg-Team/Modpack-Modern.git}"
 
 resolve_latest_modpack_tag() {

@@ -26,7 +26,7 @@ export const VIRTUAL_MAX_WINDOW_ITEMS = 48;
 export const ASSET_CACHE = 'tfg-recipe-viewer-v1';
 export const FALLBACK_LOCALE = 'en_us';
 
-export const DEV_QUERY_KEYS = ['dev', 'cdn', 'emiVersion', 'profile'];
+export const DEV_QUERY_KEYS = ['dev', 'profile'];
 export const DEV_PROFILE_BUNDLE_ID = 'dev-local';
 
 export const UI_TEXT = {

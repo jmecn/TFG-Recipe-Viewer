@@ -10,17 +10,11 @@
   <link rel="stylesheet" href="styles.css?v=26">
   <script>
     (function () {
-      const params = new URLSearchParams(location.search);
-      const profile = params.get('profile') || '';
-      const version = params.get('emiVersion')
-        || document.querySelector('meta[name="emi-renderer-version"]').content;
-      const useLocal = profile === 'dev' || params.get('cdn') === 'local' || params.get('cdn') === '0';
-      const isDev = params.get('dev') === '1';
+      const version = document.querySelector('meta[name="emi-renderer-version"]').content;
+      const isDev = new URLSearchParams(location.search).get('dev') === '1';
       const cssFile = isDev ? 'emi.css' : 'emi.min.css';
-      const link = document.getElementById('emi-style');
-      link.href = useLocal
-        ? siteUrl('lib/' + cssFile)
-        : 'https://cdn.jsdelivr.net/npm/emi-recipe-renderer@' + version + '/dist/' + cssFile;
+      document.getElementById('emi-style').href =
+        'https://cdn.jsdelivr.net/npm/emi-recipe-renderer@' + version + '/dist/' + cssFile;
     })();
   </script>
 </head>
@@ -132,21 +126,13 @@
 
   <script>
     (function () {
-      const params = new URLSearchParams(location.search);
-      const profile = params.get('profile') || '';
-      const isDevMode = params.get('dev') === '1';
-      const useLocal = profile === 'dev' || params.get('cdn') === 'local' || params.get('cdn') === '0';
-      const emiVersion = params.get('emiVersion')
-        || document.querySelector('meta[name="emi-renderer-version"]').content;
+      const version = document.querySelector('meta[name="emi-renderer-version"]').content;
+      const isDevMode = new URLSearchParams(location.search).get('dev') === '1';
       const rendererJsFile = isDevMode ? 'emi.js' : 'emi.min.js';
       const script = document.createElement('script');
 
-      if (useLocal) {
-        script.src = siteUrl('lib/' + rendererJsFile);
-      } else {
-        script.src = 'https://cdn.jsdelivr.net/npm/emi-recipe-renderer@'
-          + emiVersion + '/dist/' + rendererJsFile;
-      }
+      script.src = 'https://cdn.jsdelivr.net/npm/emi-recipe-renderer@'
+        + version + '/dist/' + rendererJsFile;
 
       function showError(message) {
         document.body.insertAdjacentHTML('beforeend',
@@ -154,9 +140,7 @@
       }
 
       script.onerror = function () {
-        showError('Failed to load emi-recipe-renderer'
-          + (useLocal ? ' from site/lib.' : ' from jsDelivr.')
-          + ' Try <code>?cdn=local</code> after <code>npm install</code>.');
+        showError('Failed to load emi-recipe-renderer@' + version + ' from jsDelivr.');
       };
       script.onload = function () {
         if (!globalThis.EmiRecipeRenderer) {

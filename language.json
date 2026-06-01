@@ -10,7 +10,8 @@
     "de_de",
     "fr_fr",
     "es_es",
-    "pt_br"
+    "pt_br",
+    "pl_pl"
   ],
   "localeNames": {
     "en_us": "English (US)",
@@ -22,7 +23,8 @@
     "de_de": "Deutsch",
     "fr_fr": "Français",
     "es_es": "Español",
-    "pt_br": "Português (Brasil)"
+    "pt_br": "Português (Brasil)",
+    "pl_pl": "Polski"
   },
   "uiText": {
     "en_us": {

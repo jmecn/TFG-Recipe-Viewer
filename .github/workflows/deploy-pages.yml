@@ -60,7 +60,7 @@ jobs:
           fetch-depth: 1
 
       - name: Load CI config
-        run: bash scripts/ci-load-config.sh
+        run: bash scripts/ci.sh load-config
 
       - name: Download export metadata
         if: github.event_name == 'workflow_run'
@@ -83,7 +83,7 @@ jobs:
             echo "bundle_id=$(cat export-meta/bundle-id)" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          bash scripts/ci-resolve-bundle-id.sh
+          bash scripts/ci.sh resolve-bundle-id
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -96,7 +96,7 @@ jobs:
         env:
           RENDERER_VER: ${{ github.event.inputs.renderer_version || env.RENDERER_VERSION }}
           OPTIMIZE_VER: ${{ github.event.inputs.optimize_version || env.OPTIMIZE_VERSION }}
-        run: bash scripts/ci-prep-node.sh
+        run: bash scripts/ci.sh prep-node
 
       # Raw bundle: Export artifact only (no actions/cache restore — stale schema-1 caches are ignored).
 
@@ -112,7 +112,7 @@ jobs:
         if: github.event_name == 'workflow_run'
         env:
           BUNDLE_ID: ${{ steps.metadata.outputs.bundle_id }}
-        run: bash scripts/ci-extract-raw-bundle-artifact.sh
+        run: bash scripts/ci.sh extract-raw-bundle
 
       - name: Download raw bundle from latest Export (manual / push)
         if: github.event_name != 'workflow_run'
@@ -121,20 +121,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
-        run: bash scripts/ci-fetch-raw-bundle-for-deploy.sh
+        run: bash scripts/ci.sh fetch-raw-bundle
 
       - name: Verify raw bundle (schema 2)
-        run: bash scripts/ci-verify-emi-bundle.sh
+        run: bash scripts/ci.sh verify-emi-bundle
 
       - name: Optimize and stage bundle
         env:
           BUNDLE_ID: ${{ steps.metadata.outputs.bundle_id }}
-        run: bash scripts/ci-optimize-and-stage-bundle.sh
+        run: bash scripts/ci.sh optimize-and-stage
 
       - name: Prepare site for deploy
         env:
           BUNDLE_ID: ${{ steps.metadata.outputs.bundle_id }}
-        run: bash scripts/ci-prep-deploy-site.sh
+        run: bash scripts/ci.sh prep-deploy-site
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
