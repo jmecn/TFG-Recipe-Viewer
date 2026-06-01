@@ -467,6 +467,11 @@ body.is-booting .app-main {
   width: 100%;
 }
 
+#panel-item-detail .virtual-spacer {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
 #panel-item-detail .recipe-card {
   max-width: none;
   content-visibility: visible;

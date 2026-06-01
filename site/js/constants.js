@@ -17,7 +17,8 @@ export const TAG_MEMBERS_PER_PAGE = 60;
 export const TAG_BUCKET_ORDER = ['items', 'blocks', 'fluids'];
 
 export const VIRTUAL_CARD_WIDTH = 340;
-export const VIRTUAL_ROW_HEIGHT = 200;
+/** Estimated row height for virtual list spacers (GTCEu cards are often taller than 200px). */
+export const VIRTUAL_ROW_HEIGHT = 260;
 export const VIRTUAL_BUFFER_ROWS = 2;
 /** Safety cap when viewport measurement is still wrong. */
 export const VIRTUAL_MAX_WINDOW_ITEMS = 48;

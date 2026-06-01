@@ -119,8 +119,7 @@ jobs:
       - name: Launch modpack and verify EMI export
         env:
           ALSOFT_DRIVERS: "null"
-          EXPORT_WARMUP: ${{ github.event.inputs.export_warmup_ticks || env.EXPORT_WARMUP_TICKS }}
-          EXPORT_LANGUAGES: ${{ steps.export_languages.outputs.export_languages }}
+          # Do not reference step env vars via env.* inside this same env block (GHA limitation).
           MWE_JVM_FLAGS: >-
             -Xmx12G
             -Xms4G
@@ -130,9 +129,9 @@ jobs:
             -DminecraftWebExport.export.enabled=true
             -DminecraftWebExport.runExportAndExit=true
             -DminecraftWebExport.export.outputDir=${{ env.EXPORT_RAW }}
-            -DminecraftWebExport.exportWarmupTicks=${{ env.EXPORT_WARMUP }}
+            -DminecraftWebExport.exportWarmupTicks=${{ github.event.inputs.export_warmup_ticks || env.EXPORT_WARMUP_TICKS }}
             -DminecraftWebExport.exportTimeoutSeconds=${{ env.EXPORT_TIMEOUT_SECONDS }}
-            -DminecraftWebExport.exportLanguages=${{ env.EXPORT_LANGUAGES }}
+            -DminecraftWebExport.exportLanguages=${{ steps.export_languages.outputs.export_languages }}
         run: bash scripts/ci-launch-mc-export.sh
 
       - name: Save emi-export world cache

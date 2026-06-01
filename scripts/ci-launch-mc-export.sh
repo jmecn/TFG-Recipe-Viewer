@@ -17,6 +17,12 @@ onboardAccessibility:false
 pauseOnLostFocus:false
 EOF
 
+if [[ "${MWE_JVM_FLAGS:-}" != *minecraftWebExport.exportLanguages=* ]]; then
+  EXPORT_LANGUAGES="${EXPORT_LANGUAGES:-$(bash "$ROOT/scripts/ci-resolve-export-languages.sh" --stdout)}"
+  MWE_JVM_FLAGS="${MWE_JVM_FLAGS} -DminecraftWebExport.exportLanguages=${EXPORT_LANGUAGES}"
+  echo "Export languages (from language.json): ${EXPORT_LANGUAGES}"
+fi
+
 cd "$ROOT"
 xvfb-run --server-args="-screen 0 1280x720x24" -a java \
   -Dhmc.check.xvfb=true \

@@ -36,7 +36,12 @@ import {
   visibleCategoryIds,
 } from './recipe-meta.js';
 import { buildAppUrl, parseLocationQuery } from './routing.js';
-import { offsetTopInScrollParent, scrollViewportHeight } from './scroll.js';
+import {
+  mainMaxScrollTop,
+  offsetTopInScrollParent,
+  scrollViewportHeight,
+  virtualListContentHeight,
+} from './scroll.js';
 import {
   buildPageRange,
   canonicalItemId,
@@ -768,15 +773,13 @@ class RecipeViewer {
     container.classList.remove('is-loading');
   }
 
-  clampMainScrollForContainer(container, totalRows, cols) {
+  clampMainScroll() {
     const scrollEl = this.els.main;
-    const containerTop = offsetTopInScrollParent(container, scrollEl);
-    const contentHeight = Math.ceil(totalRows) * VIRTUAL_ROW_HEIGHT;
-    const maxScroll = Math.max(0, containerTop + contentHeight - scrollViewportHeight(scrollEl));
+    const maxScroll = mainMaxScrollTop(scrollEl);
     if (scrollEl.scrollTop > maxScroll) {
       const from = scrollEl.scrollTop;
       scrollEl.scrollTop = maxScroll;
-      vlog('clampScroll', { from, to: maxScroll, totalRows, cols });
+      vlog('clampScroll', { from, to: maxScroll, scrollHeight: scrollEl.scrollHeight });
     }
   }
 
@@ -802,11 +805,11 @@ class RecipeViewer {
     const scrollEl = this.els.main;
     const cols = this.measureVirtualCols(container);
     const totalRows = Math.ceil(ids.length / cols);
-    this.clampMainScrollForContainer(container, totalRows, cols);
+    this.clampMainScroll();
 
     const containerTop = offsetTopInScrollParent(container, scrollEl);
     const viewportHeight = scrollViewportHeight(scrollEl);
-    const contentHeight = totalRows * VIRTUAL_ROW_HEIGHT;
+    const contentHeight = virtualListContentHeight(container, totalRows, VIRTUAL_ROW_HEIGHT);
     const maxViewTop = Math.max(0, contentHeight - viewportHeight);
     let viewTop = Math.max(0, scrollEl.scrollTop - containerTop);
     viewTop = Math.min(viewTop, maxViewTop);

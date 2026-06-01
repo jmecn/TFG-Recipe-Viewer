@@ -20,3 +20,14 @@ export function offsetTopInScrollParent(el, scrollParent) {
   }
   return top;
 }
+
+/** Virtual spacers use a fixed row height; real cards can be taller — use DOM height when larger. */
+export function virtualListContentHeight(container, totalRows, rowHeight) {
+  const virtual = Math.ceil(totalRows) * rowHeight;
+  const dom = container?.offsetHeight ?? 0;
+  return Math.max(virtual, dom);
+}
+
+export function mainMaxScrollTop(scrollEl) {
+  return Math.max(0, scrollEl.scrollHeight - scrollViewportHeight(scrollEl));
+}
