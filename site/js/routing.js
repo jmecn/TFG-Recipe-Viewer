@@ -11,6 +11,8 @@ export function parseLocationQuery() {
   const bundleToken = params.get('bundle') || (isDevProfile() ? DEV_PROFILE_BUNDLE_ID : '_');
   const search = params.get('search') || '';
   const lang = params.get('lang') || null;
+  const rawPage = Number.parseInt(params.get('page') || '1', 10);
+  const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
   const recipe = params.get('recipe');
   const tag = params.get('tag');
   const item = params.get('item');
@@ -26,7 +28,7 @@ export function parseLocationQuery() {
     view = 'item';
     id = canonicalItemId(item);
   }
-  return { bundleToken, view, id, search, lang };
+  return { bundleToken, view, id, search, lang, page };
 }
 
 export function buildAppUrl(route) {
@@ -42,6 +44,8 @@ export function buildAppUrl(route) {
   if (route.lang) p.set('lang', route.lang);
   const search = route.search != null ? String(route.search).trim() : '';
   if (search) p.set('search', search);
+  const page = Number.isFinite(route.page) && route.page > 0 ? Math.floor(route.page) : 1;
+  if (route.view === 'items' && page > 1) p.set('page', String(page));
   if (route.view === 'item' && route.id) p.set('item', route.id);
   else if (route.view === 'tag' && route.id) p.set('tag', route.id);
   else if (route.view === 'recipe' && route.id) p.set('recipe', route.id);

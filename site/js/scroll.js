@@ -24,6 +24,12 @@ export function offsetTopInScrollParent(el, scrollParent) {
 /** Virtual spacers use a fixed row height; real cards can be taller — use DOM height when larger. */
 export function virtualListContentHeight(container, totalRows, rowHeight) {
   const virtual = Math.ceil(totalRows) * rowHeight;
+  const hasVirtualSpacers = Boolean(
+    container?.querySelector?.(':scope > .virtual-spacer[data-virtual-spacer]'),
+  );
+  // Once spacers exist, offsetHeight already includes spacer heights. Feeding that value
+  // back into window calculation can create a positive feedback loop (infinite scroll).
+  if (hasVirtualSpacers) return virtual;
   const dom = container?.offsetHeight ?? 0;
   return Math.max(virtual, dom);
 }

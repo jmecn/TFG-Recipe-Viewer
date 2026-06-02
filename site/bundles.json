@@ -1,4 +1,6 @@
 {
-  "default": null,
-  "bundles": []
+  "default": "tfg-0.12.8",
+  "bundles": [
+    "tfg-0.12.8"
+  ]
 }

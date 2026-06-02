@@ -4,6 +4,9 @@
 import {
   ITEMS_PER_PAGE,
   getStoredLocale,
+  RECIPE_CARD_PADDING_Y,
+  RECIPE_GRID_ROW_GAP,
+  RECIPE_META_MARGIN,
   setStoredLocale,
   TAG_BUCKET_ORDER,
   TAG_MEMBERS_PER_PAGE,
@@ -37,7 +40,6 @@ import {
 } from './recipe-meta.js';
 import { buildAppUrl, parseLocationQuery } from './routing.js';
 import {
-  mainMaxScrollTop,
   offsetTopInScrollParent,
   scrollViewportHeight,
   virtualListContentHeight,
@@ -52,6 +54,20 @@ import {
 } from './util.js';
 
 const { EmiRecipeRenderer } = globalThis;
+
+/** Full virtual-list row stride: EMI image + .recipe-card chrome + grid row gap. */
+function recipeCardRowHeightFromMeta(meta, imageScale = 2) {
+  const scale = Number.isFinite(imageScale) && imageScale > 0 ? imageScale : 2;
+  const margin = Number.isFinite(meta?.margin) ? meta.margin : RECIPE_META_MARGIN;
+  const panelH = Number.isFinite(meta?.height) ? meta.height : 0;
+  const frameH = panelH + margin * 2;
+  let stageH = frameH * scale;
+  if (EmiRecipeRenderer?._displaySizeFromMeta) {
+    stageH = EmiRecipeRenderer._displaySizeFromMeta(meta, scale).height;
+  }
+  return Math.ceil(stageH + RECIPE_CARD_PADDING_Y + RECIPE_GRID_ROW_GAP);
+}
+
 class RecipeViewer {
   constructor(catalog, languageConfig) {
     this.catalog = catalog;
@@ -73,8 +89,9 @@ class RecipeViewer {
     this.filterTimer = null;
     this.itemsPage = 1;
     this.activeDetailTab = 'recipes';
-    this.currentRoute = { bundleToken: '_', view: 'items', id: null, search: '', lang: null };
+    this.currentRoute = { bundleToken: '_', view: 'items', id: null, search: '', lang: null, page: 1 };
     this.currentItemDetail = null;
+    this.currentGrouped = { recipes: {}, uses: {} };
     this.currentItemId = null;
     this.detailScrollTop = { recipes: 0, uses: 0, tags: 0 };
     this.tagMembersPage = 1;
@@ -82,9 +99,14 @@ class RecipeViewer {
     this.itemSearchRows = null;
     this.itemLabelById = null;
     this.itemDetailLoadSeq = 0;
+    this.recipeCardStrideCache = new Map();
     this.virtual = {
-      recipes: { ids: [], container: null, raf: 0, renderKey: null, visibleRange: null },
-      uses: { ids: [], container: null, raf: 0, renderKey: null, visibleRange: null },
+      recipes: {
+        ids: [], container: null, raf: 0, renderKey: null, visibleRange: null, updating: false, rerun: false, rowHeight: VIRTUAL_ROW_HEIGHT, heightProbePromise: null,
+      },
+      uses: {
+        ids: [], container: null, raf: 0, renderKey: null, visibleRange: null, updating: false, rerun: false, rowHeight: VIRTUAL_ROW_HEIGHT, heightProbePromise: null,
+      },
     };
     this.resizeTimer = 0;
 
@@ -341,7 +363,7 @@ class RecipeViewer {
 
   async recipeExists(recipeId) {
     try {
-      const renderer = await this.ensureRenderer();
+      const renderer = await this.ensureItemRenderer();
       await renderer.loadRecipeMeta(recipeId);
       return true;
     } catch {
@@ -359,12 +381,14 @@ class RecipeViewer {
 
   goHome(replace = true) {
     this.itemsPage = 1;
+    this.els.filter.value = '';
     this.navigate({
       bundleToken: this.bundleToken,
       view: 'items',
       id: null,
-      search: this.els.filter.value,
+      search: '',
       lang: this.locale,
+      page: 1,
     }, replace);
   }
 
@@ -398,7 +422,9 @@ class RecipeViewer {
 
   async ensureRenderer() {
     if (!this.renderer) this.renderer = new EmiRecipeRenderer(this.rendererOptions());
-    this.renderer.setBaseUrl(this.baseUrl);
+    if (this.renderer.baseUrl !== this.baseUrl) {
+      this.renderer.setBaseUrl(this.baseUrl);
+    }
     this.renderer.onItemClick = this.rendererOptions().onItemClick;
     this.renderer.onTagClick = this.rendererOptions().onTagClick;
     await this.renderer.setLocale(this.locale);
@@ -424,12 +450,20 @@ class RecipeViewer {
       id: partial.id !== undefined ? partial.id : this.currentRoute.id,
       search: partial.search !== undefined ? partial.search : this.els.filter.value,
       lang: partial.lang ?? this.locale,
+      page: partial.page ?? this.itemsPage,
     };
   }
 
   navigate(partial, replace = false) {
+    globalThis.hideEmiTagPopover?.();
     const route = this.buildRouteFromUi(partial);
     if (route.view === 'items') route.id = null;
+    if (route.view === 'items' && this.currentRoute.view !== 'items' && partial.search === undefined) {
+      route.search = '';
+      this.els.filter.value = '';
+      route.page = 1;
+      this.itemsPage = 1;
+    }
     if (route.view === 'item' && route.id) {
       route.search = '';
       this.els.filter.value = '';
@@ -446,17 +480,19 @@ class RecipeViewer {
     const url = buildAppUrl(route);
     if (replace) history.replaceState({}, '', url);
     else history.pushState({}, '', url);
-    this.currentRoute = { ...this.currentRoute, search: route.search, lang: route.lang };
+    this.currentRoute = { ...this.currentRoute, search: route.search, lang: route.lang, page: route.page };
   }
 
   async syncRouteFromLocation(options = {}) {
     try {
+      globalThis.hideEmiTagPopover?.();
       const route = parseLocationQuery();
       if (route.lang) {
         this.locale = route.lang;
         setStoredLocale(this.locale);
       }
       this.els.filter.value = route.search;
+      this.itemsPage = route.view === 'items' ? route.page || 1 : 1;
       await this.ensureBundle(route.bundleToken, {
         onStatus: options.onStatus,
       });
@@ -493,12 +529,15 @@ class RecipeViewer {
   }
 
   onFilterChanged() {
-    this.syncQueryFromUi(true);
     if (this.currentRoute.view === 'items') {
       this.itemsPage = 1;
+      this.syncQueryFromUi(true);
       void this.renderItems();
     } else if (this.currentRoute.view === 'item' && this.currentItemDetail) {
+      this.syncQueryFromUi(true);
       void this.renderItemDetail(this.currentRoute.id);
+    } else {
+      this.syncQueryFromUi(true);
     }
   }
 
@@ -679,6 +718,7 @@ class RecipeViewer {
       summary: this.itemsFilterSummary(allIds.length),
       onPage: (page) => {
         this.itemsPage = page;
+        this.syncQueryFromUi(false);
         void this.renderItems();
       },
     });
@@ -725,7 +765,9 @@ class RecipeViewer {
     if (categories.length === 0) {
       navEl.hidden = true;
       navEl.replaceChildren();
-      this.virtual[panelKey] = { ids: [], container, raf: 0, renderKey: null };
+      this.virtual[panelKey] = {
+        ids: [], container, raf: 0, renderKey: null, visibleRange: null, updating: false, rerun: false, rowHeight: VIRTUAL_ROW_HEIGHT, heightProbePromise: null,
+      };
       delete container.dataset.virtualRenderKey;
       container.classList.remove('is-loading');
       container.replaceChildren();
@@ -806,7 +848,9 @@ class RecipeViewer {
         count: ids.length,
       });
     } else {
-      this.virtual[panelKey] = { ids, container, raf: 0, renderKey: null, visibleRange: null };
+      this.virtual[panelKey] = {
+        ids, container, raf: 0, renderKey: null, visibleRange: null, updating: false, rerun: false, rowHeight: VIRTUAL_ROW_HEIGHT, heightProbePromise: null,
+      };
       delete container.dataset.virtualRenderKey;
       if (this.mountSessions[panelKey]?.disconnect) {
         this.mountSessions[panelKey].disconnect();
@@ -822,18 +866,11 @@ class RecipeViewer {
         count: ids.length,
         prevCount: prev?.ids?.length ?? 0,
       });
+      void this.probeCategoryRowHeight(panelKey, ids).then(() => {
+        if (this.activeDetailTab === panelKey) this.scheduleVirtualUpdate();
+      });
     }
     container.classList.remove('is-loading');
-  }
-
-  clampMainScroll() {
-    const scrollEl = this.els.main;
-    const maxScroll = mainMaxScrollTop(scrollEl);
-    if (scrollEl.scrollTop > maxScroll) {
-      const from = scrollEl.scrollTop;
-      scrollEl.scrollTop = maxScroll;
-      vlog('clampScroll', { from, to: maxScroll, scrollHeight: scrollEl.scrollHeight });
-    }
   }
 
   /** Hidden panels report clientWidth 0; use main width so tab switches do not reshuffle cols. */
@@ -849,6 +886,52 @@ class RecipeViewer {
     return 3;
   }
 
+  /** Measure outer .recipe-card box (stage + id label + padding), plus flex row gap. */
+  measureRecipeCardRowStride(cardEl) {
+    const rect = cardEl.getBoundingClientRect();
+    return Math.ceil(rect.height + RECIPE_GRID_ROW_GAP);
+  }
+
+  estimateVirtualRowHeight(container, key) {
+    return this.virtual[key]?.rowHeight || VIRTUAL_ROW_HEIGHT;
+  }
+
+  async probeCategoryRowHeight(panelKey, ids) {
+    const state = this.virtual[panelKey];
+    if (!state || !Array.isArray(ids) || ids.length === 0) return;
+    if (state.heightProbePromise) {
+      await state.heightProbePromise;
+      return;
+    }
+    state.heightProbePromise = (async () => {
+      const renderer = await this.ensureRenderer();
+      const imageScale = Number.isFinite(this.bundle?.imageScale) ? this.bundle.imageScale : 2;
+      let maxH = VIRTUAL_ROW_HEIGHT;
+      for (let i = 0; i < ids.length; i += 1) {
+        const recipeId = ids[i];
+        try {
+          let stride = this.recipeCardStrideCache.get(recipeId);
+          if (!Number.isFinite(stride)) {
+            const meta = await renderer.loadRecipeMeta(recipeId);
+            stride = recipeCardRowHeightFromMeta(meta, imageScale);
+            this.recipeCardStrideCache.set(recipeId, stride);
+          }
+          if (stride > maxH) maxH = stride;
+        } catch {
+          // skip missing layout meta
+        }
+        if (i > 0 && i % 200 === 0) await yieldToMain();
+      }
+      state.rowHeight = Math.max(VIRTUAL_ROW_HEIGHT, Math.min(720, maxH));
+      vlog('probeCategoryRowHeight', { panelKey, count: ids.length, rowHeight: state.rowHeight });
+    })();
+    try {
+      await state.heightProbePromise;
+    } finally {
+      state.heightProbePromise = null;
+    }
+  }
+
   computeVirtualWindow(key) {
     const state = this.virtual[key];
     if (!state?.container) return null;
@@ -858,20 +941,20 @@ class RecipeViewer {
     const scrollEl = this.els.main;
     const cols = this.measureVirtualCols(container);
     const totalRows = Math.ceil(ids.length / cols);
-    this.clampMainScroll();
+    const rowHeight = this.estimateVirtualRowHeight(container, key);
 
     const containerTop = offsetTopInScrollParent(container, scrollEl);
     const viewportHeight = scrollViewportHeight(scrollEl);
-    const contentHeight = virtualListContentHeight(container, totalRows, VIRTUAL_ROW_HEIGHT);
+    const contentHeight = virtualListContentHeight(container, totalRows, rowHeight);
     const maxViewTop = Math.max(0, contentHeight - viewportHeight);
     let viewTop = Math.max(0, scrollEl.scrollTop - containerTop);
     viewTop = Math.min(viewTop, maxViewTop);
     const viewBottom = Math.min(viewTop + viewportHeight, contentHeight);
 
-    const startRow = Math.max(0, Math.floor(viewTop / VIRTUAL_ROW_HEIGHT) - VIRTUAL_BUFFER_ROWS);
+    const startRow = Math.max(0, Math.floor(viewTop / rowHeight) - VIRTUAL_BUFFER_ROWS);
     let endRow = Math.min(
       totalRows - 1,
-      Math.ceil(viewBottom / VIRTUAL_ROW_HEIGHT) + VIRTUAL_BUFFER_ROWS,
+      Math.ceil(viewBottom / rowHeight) + VIRTUAL_BUFFER_ROWS,
     );
     const maxRowsInWindow = Math.ceil(VIRTUAL_MAX_WINDOW_ITEMS / cols) + VIRTUAL_BUFFER_ROWS * 2;
     endRow = Math.min(endRow, startRow + maxRowsInWindow - 1);
@@ -892,6 +975,7 @@ class RecipeViewer {
       clientHeight: scrollEl.clientHeight,
       viewTop,
       viewBottom,
+      rowHeight,
       cols,
       totalRows,
       startRow,
@@ -901,7 +985,9 @@ class RecipeViewer {
       windowCount: windowIds.length,
       idsCount: ids.length,
     });
-    return { container, ids, cols, totalRows, startRow, endRow, startIndex, endIndex, windowIds, renderKey };
+    return {
+      container, ids, cols, totalRows, startRow, endRow, startIndex, endIndex, windowIds, renderKey, rowHeight,
+    };
   }
 
   virtualWindowMatchesDom(container, windowIds) {
@@ -931,10 +1017,10 @@ class RecipeViewer {
     return { top, bottom };
   }
 
-  syncVirtualSpacers(container, startRow, endRow, totalRows) {
+  syncVirtualSpacers(container, startRow, endRow, totalRows, rowHeight = VIRTUAL_ROW_HEIGHT) {
     const { top, bottom } = this.ensureVirtualSpacers(container);
-    const topH = `${startRow * VIRTUAL_ROW_HEIGHT}px`;
-    const bottomH = `${Math.max(0, (totalRows - endRow - 1) * VIRTUAL_ROW_HEIGHT)}px`;
+    const topH = `${startRow * rowHeight}px`;
+    const bottomH = `${Math.max(0, (totalRows - endRow - 1) * rowHeight)}px`;
     if (top.style.height !== topH) top.style.height = topH;
     if (bottom.style.height !== bottomH) bottom.style.height = bottomH;
   }
@@ -950,8 +1036,8 @@ class RecipeViewer {
 
   /** Slide window: reorder in place, add/remove edge cards only (no replaceChildren). */
   patchVirtualListDom(container, win) {
-    const { windowIds, startRow, endRow, totalRows } = win;
-    this.syncVirtualSpacers(container, startRow, endRow, totalRows);
+    const { windowIds, startRow, endRow, totalRows, rowHeight } = win;
+    this.syncVirtualSpacers(container, startRow, endRow, totalRows, rowHeight);
     const idToCard = this.collectRecipeCardsById(container);
     const wantSet = new Set(windowIds);
     for (const [id, card] of idToCard) {
@@ -995,6 +1081,14 @@ class RecipeViewer {
     this.els.detailTabTags.setAttribute('aria-current', tab === 'tags' ? 'page' : 'false');
     this.els.main.scrollTo({ top: this.detailScrollTop[tab] || 0, behavior: 'auto' });
     if (tab !== 'recipes' && tab !== 'uses') return;
+    const grouped = this.currentGrouped?.[tab];
+    if (grouped && typeof grouped === 'object') {
+      void this.ensureItemRenderer().then(() => {
+        if (this.activeDetailTab !== tab) return;
+        this.applyItemRecipePanel(tab, grouped, normalizedFilterQuery(this.els.filter.value));
+        this.scheduleVirtualUpdate();
+      });
+    }
 
     const tryReuseOrUpdate = () => {
       const win = this.computeVirtualWindow(tab);
@@ -1081,6 +1175,10 @@ class RecipeViewer {
     if (this.activeDetailTab !== 'recipes' && this.activeDetailTab !== 'uses') return;
     const state = this.virtual[this.activeDetailTab];
     if (!state?.container) return;
+    if (state.updating) {
+      state.rerun = true;
+      return;
+    }
     if (state.raf) cancelAnimationFrame(state.raf);
     state.raf = requestAnimationFrame(() => {
       state.raf = 0;
@@ -1093,112 +1191,123 @@ class RecipeViewer {
   async updateVirtualList(key) {
     const state = this.virtual[key];
     if (!state?.container) return;
-    const win = this.computeVirtualWindow(key);
-    if (!win) {
-      delete state.container.dataset.virtualRenderKey;
-      state.visibleRange = null;
+    if (state.updating) {
+      state.rerun = true;
+      return;
+    }
+    state.updating = true;
+    try {
+      const win = this.computeVirtualWindow(key);
+      if (!win) {
+        delete state.container.dataset.virtualRenderKey;
+        state.visibleRange = null;
+        if (this.mountSessions[key]?.disconnect) {
+          this.mountSessions[key].disconnect();
+          this.mountSessions[key] = null;
+        }
+        state.container.replaceChildren();
+        return;
+      }
+      const {
+        container, cols, totalRows, startRow, endRow, windowIds, renderKey,
+      } = win;
+      const nextRange = { startIndex: win.startIndex, endIndex: win.endIndex };
+
+      const domRenderKey = container.dataset.virtualRenderKey || null;
+      const domMatches = this.virtualWindowMatchesDom(container, windowIds);
+      const canSkipByKey = (domRenderKey === renderKey || state.renderKey === renderKey) && domMatches;
+      if (canSkipByKey) {
+        state.renderKey = renderKey;
+        state.visibleRange = nextRange;
+        container.dataset.virtualRenderKey = renderKey;
+        this.syncVirtualSpacers(container, startRow, endRow, totalRows, win.rowHeight);
+        container.classList.remove('is-loading');
+        vlog('updateVirtualList:skip', {
+          key,
+          renderKey,
+          cols,
+          windowCount: windowIds.length,
+          startIndex: win.startIndex,
+        });
+        return;
+      }
+
+      const prevRange = state.visibleRange;
+      const canPatch = false;
+
+      if (canPatch) {
+        const needsMountIds = this.patchVirtualListDom(container, win);
+        state.renderKey = renderKey;
+        state.visibleRange = nextRange;
+        container.dataset.virtualRenderKey = renderKey;
+        vlog('updateVirtualList:patch', {
+          key,
+          cols,
+          windowCount: windowIds.length,
+          needsMount: needsMountIds.length,
+          prevStart: prevRange.startIndex,
+          nextStart: win.startIndex,
+        });
+        if (needsMountIds.length > 0) {
+          try {
+            await this.mountRecipeGrid(container, key, { incremental: true });
+            void this.waitForRecipeCardsReady(container, 10000, true);
+          } catch (e) {
+            console.warn('[recipe-viewer] incremental mount failed', e);
+          }
+        }
+        return;
+      }
+
+      state.renderKey = renderKey;
+      state.visibleRange = nextRange;
+
+      const { top, bottom } = this.ensureVirtualSpacers(container);
+      top.style.height = `${startRow * win.rowHeight}px`;
+      bottom.style.height = `${Math.max(0, (totalRows - endRow - 1) * win.rowHeight)}px`;
+
+      const frag = document.createDocumentFragment();
+      frag.appendChild(top);
+      for (const recipeId of windowIds) {
+        frag.appendChild(this.acquireRecipeCard(recipeId));
+      }
+      frag.appendChild(bottom);
+      const needsMountIds = windowIds.filter((recipeId) => {
+        const card = this.recipeCardPool.get(recipeId);
+        const stage = card?.querySelector('.recipe-card-stage[data-recipe-id]');
+        return !stage || stage.dataset.emiMounted !== '1';
+      });
+      if (needsMountIds.length > 0) container.classList.add('is-loading');
       if (this.mountSessions[key]?.disconnect) {
         this.mountSessions[key].disconnect();
         this.mountSessions[key] = null;
       }
-      state.container.replaceChildren();
-      return;
-    }
-    const {
-      container, cols, totalRows, startRow, endRow, windowIds, renderKey,
-    } = win;
-    const nextRange = { startIndex: win.startIndex, endIndex: win.endIndex };
-
-    const domRenderKey = container.dataset.virtualRenderKey || null;
-    const domMatches = this.virtualWindowMatchesDom(container, windowIds);
-    const canSkipByKey = (domRenderKey === renderKey || state.renderKey === renderKey) && domMatches;
-    if (canSkipByKey) {
-      state.renderKey = renderKey;
-      state.visibleRange = nextRange;
+      container.replaceChildren(frag);
       container.dataset.virtualRenderKey = renderKey;
-      this.syncVirtualSpacers(container, startRow, endRow, totalRows);
-      container.classList.remove('is-loading');
-      vlog('updateVirtualList:skip', {
+      vlog('updateVirtualList:rebuild', {
         key,
         renderKey,
         cols,
-        windowCount: windowIds.length,
-        startIndex: win.startIndex,
-      });
-      return;
-    }
-
-    const prevRange = state.visibleRange;
-    const canPatch = prevRange
-      && rangesOverlap(prevRange, nextRange)
-      && container.querySelector(':scope > .recipe-card');
-
-    if (canPatch) {
-      const needsMountIds = this.patchVirtualListDom(container, win);
-      state.renderKey = renderKey;
-      state.visibleRange = nextRange;
-      container.dataset.virtualRenderKey = renderKey;
-      vlog('updateVirtualList:patch', {
-        key,
-        cols,
+        containerWidth: container.clientWidth,
         windowCount: windowIds.length,
         needsMount: needsMountIds.length,
-        prevStart: prevRange.startIndex,
-        nextStart: win.startIndex,
+        domRenderKey,
+        sampleIds: windowIds.slice(0, 3),
       });
-      if (needsMountIds.length > 0) {
-        try {
-          await this.mountRecipeGrid(container, key, { incremental: true });
-          void this.waitForRecipeCardsReady(container, 10000, true);
-        } catch (e) {
-          console.warn('[recipe-viewer] incremental mount failed', e);
+      try {
+        if (needsMountIds.length > 0) {
+          await this.mountRecipeGrid(container, key);
+          await this.waitForRecipeCardsReady(container, 10000);
         }
-      }
-      return;
-    }
-
-    state.renderKey = renderKey;
-    state.visibleRange = nextRange;
-
-    const { top, bottom } = this.ensureVirtualSpacers(container);
-    top.style.height = `${startRow * VIRTUAL_ROW_HEIGHT}px`;
-    bottom.style.height = `${Math.max(0, (totalRows - endRow - 1) * VIRTUAL_ROW_HEIGHT)}px`;
-
-    const frag = document.createDocumentFragment();
-    frag.appendChild(top);
-    for (const recipeId of windowIds) {
-      frag.appendChild(this.acquireRecipeCard(recipeId));
-    }
-    frag.appendChild(bottom);
-    const needsMountIds = windowIds.filter((recipeId) => {
-      const card = this.recipeCardPool.get(recipeId);
-      const stage = card?.querySelector('.recipe-card-stage[data-recipe-id]');
-      return !stage || stage.dataset.emiMounted !== '1';
-    });
-    if (needsMountIds.length > 0) container.classList.add('is-loading');
-    if (this.mountSessions[key]?.disconnect) {
-      this.mountSessions[key].disconnect();
-      this.mountSessions[key] = null;
-    }
-    container.replaceChildren(frag);
-    container.dataset.virtualRenderKey = renderKey;
-    vlog('updateVirtualList:rebuild', {
-      key,
-      renderKey,
-      cols,
-      containerWidth: container.clientWidth,
-      windowCount: windowIds.length,
-      needsMount: needsMountIds.length,
-      domRenderKey,
-      sampleIds: windowIds.slice(0, 3),
-    });
-    try {
-      if (needsMountIds.length > 0) {
-        await this.mountRecipeGrid(container, key);
-        await this.waitForRecipeCardsReady(container, 10000);
+      } finally {
+        container.classList.remove('is-loading');
       }
     } finally {
-      container.classList.remove('is-loading');
+      state.updating = false;
+      if (state.rerun) {
+        state.rerun = false;
+        this.scheduleVirtualUpdate();
+      }
     }
   }
 
@@ -1282,8 +1391,18 @@ class RecipeViewer {
     const q = normalizedFilterQuery(this.els.filter.value);
     const outputsGrouped = detail.outputs && typeof detail.outputs === 'object' ? detail.outputs : {};
     const inputsGrouped = detail.inputs && typeof detail.inputs === 'object' ? detail.inputs : {};
+    this.currentGrouped = { recipes: outputsGrouped, uses: inputsGrouped };
     this.applyItemRecipePanel('recipes', outputsGrouped, q);
-    this.applyItemRecipePanel('uses', inputsGrouped, q);
+    if (this.activeDetailTab === 'uses') {
+      this.applyItemRecipePanel('uses', inputsGrouped, q);
+    } else {
+      this.els.itemUsesCategoryTabs.hidden = true;
+      this.els.itemUses.replaceChildren();
+      this.virtual.uses = {
+        ids: [], container: this.els.itemUses, raf: 0, renderKey: null, visibleRange: null, updating: false, rerun: false, rowHeight: VIRTUAL_ROW_HEIGHT, heightProbePromise: null,
+      };
+      delete this.els.itemUses.dataset.virtualRenderKey;
+    }
 
     const tagEntries = [];
     const seen = new Set();
@@ -1326,6 +1445,10 @@ class RecipeViewer {
       this.els.itemTagsList.appendChild(chip);
     }
 
+    await Promise.all([
+      this.probeCategoryRowHeight('recipes', this.virtual.recipes.ids),
+      this.probeCategoryRowHeight('uses', this.virtual.uses.ids),
+    ]);
     this.switchDetailTab(this.activeDetailTab || 'recipes');
     if (this.activeDetailTab === 'recipes' || this.activeDetailTab === 'uses') {
       await this.updateVirtualList(this.activeDetailTab);
@@ -1337,12 +1460,17 @@ class RecipeViewer {
   showItemDetailLoading(itemId) {
     this.recipeCardPool.clear();
     this.currentItemDetail = null;
+    this.currentGrouped = { recipes: {}, uses: {} };
     this.currentItemId = itemId;
     this.detailScrollTop = { recipes: 0, uses: 0, tags: 0 };
     this.itemCategorySelection = { recipes: null, uses: null };
     this.activeDetailTab = 'recipes';
-    this.virtual.recipes = { ids: [], container: this.els.itemRecipes, raf: 0, renderKey: null };
-    this.virtual.uses = { ids: [], container: this.els.itemUses, raf: 0, renderKey: null };
+    this.virtual.recipes = {
+      ids: [], container: this.els.itemRecipes, raf: 0, renderKey: null, visibleRange: null, updating: false, rerun: false, rowHeight: VIRTUAL_ROW_HEIGHT, heightProbePromise: null,
+    };
+    this.virtual.uses = {
+      ids: [], container: this.els.itemUses, raf: 0, renderKey: null, visibleRange: null, updating: false, rerun: false, rowHeight: VIRTUAL_ROW_HEIGHT, heightProbePromise: null,
+    };
 
     this.els.itemDetailHeader.replaceChildren();
     const backBtn = document.createElement('button');
@@ -1409,7 +1537,7 @@ class RecipeViewer {
       text.className = 'item-card-text';
       const name = document.createElement('div');
       name.className = 'item-card-name';
-      const rowLabel = row.isItem ? renderer.translateRegistry(row.id, 'item') : row.id;
+      const rowLabel = row.isItem ? lookupLabelForId(this, row.id) : row.id;
       setFormattedText(name, rowLabel);
       const idEl = document.createElement('div');
       idEl.className = 'item-card-id';

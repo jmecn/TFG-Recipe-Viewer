@@ -8,6 +8,7 @@ import { loadLanguageConfig, uiText } from './i18n.js';
 import { parseLocationQuery } from './routing.js';
 import { getStoredLocale } from './constants.js';
 import { RecipeViewer } from './recipe-viewer.js';
+import { initThemeToggle } from './theme.js';
 
 const { hideEmiTagPopover } = globalThis;
 
@@ -24,6 +25,7 @@ async function bootVerifier() {
       || getStoredLocale()
       || languageConfig.defaultLocale
       || 'en_us';
+    initThemeToggle(initialLocale);
     Boot.setStatus(uiText(initialLocale, 'bootReadingConfig'));
     const catalog = await loadBundleCatalog();
     const app = new RecipeViewer(catalog, languageConfig);

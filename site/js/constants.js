@@ -2,6 +2,7 @@
 
 export const LOCALE_STORAGE_KEY = 'recipeViewerLocale';
 const LEGACY_LOCALE_STORAGE_KEY = 'emiRendererDemoLocale';
+export const THEME_STORAGE_KEY = 'recipeViewerTheme';
 
 export function getStoredLocale() {
   return localStorage.getItem(LOCALE_STORAGE_KEY)
@@ -11,14 +12,31 @@ export function getStoredLocale() {
 export function setStoredLocale(locale) {
   localStorage.setItem(LOCALE_STORAGE_KEY, locale);
 }
+
+export function getStoredTheme() {
+  const v = localStorage.getItem(THEME_STORAGE_KEY);
+  return v === 'light' || v === 'dark' ? v : null;
+}
+
+export function setStoredTheme(theme) {
+  if (theme === 'light' || theme === 'dark') {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }
+}
 export const ITEMS_PER_PAGE = 60;
 export const TAG_MEMBERS_PER_PAGE = 60;
 
 export const TAG_BUCKET_ORDER = ['items', 'blocks', 'fluids'];
 
 export const VIRTUAL_CARD_WIDTH = 340;
-/** Estimated row height for virtual list spacers (GTCEu cards are often taller than 200px). */
+/** Fallback row height before category meta probe (see recipeCardRowHeightFromMeta). */
 export const VIRTUAL_ROW_HEIGHT = 260;
+/** Matches emi-recipe-renderer RECIPE_CARD_MARGIN / bundle recipe meta default. */
+export const RECIPE_META_MARGIN = 4;
+/** .recipe-card vertical padding: 8px top + 28px bottom (room for .recipe-card-id). */
+export const RECIPE_CARD_PADDING_Y = 36;
+/** #panel-item-detail .recipe-grid-compact gap — included in virtual row stride. */
+export const RECIPE_GRID_ROW_GAP = 12;
 export const VIRTUAL_BUFFER_ROWS = 2;
 /** Safety cap when viewport measurement is still wrong. */
 export const VIRTUAL_MAX_WINDOW_ITEMS = 48;
@@ -35,6 +53,7 @@ export const UI_TEXT = {
     brandTitle: 'Recipe Viewer home',
     labelLang: 'lang:',
     labelBundle: 'bundle:',
+    labelTheme: 'Theme',
     tabsRecipes: 'Recipes',
     tabsUses: 'Uses',
     tabsTags: 'Tags',
@@ -67,6 +86,7 @@ export const UI_TEXT = {
     brandTitle: '配方浏览器首页',
     labelLang: '语言：',
     labelBundle: '包：',
+    labelTheme: '主题',
     tabsRecipes: '配方',
     tabsUses: '用途',
     tabsTags: '标签',
