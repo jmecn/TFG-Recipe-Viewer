@@ -10,9 +10,16 @@
     (function () {
       try {
         var stored = localStorage.getItem('recipeViewerTheme');
+        var systemTheme = null;
+        if (window.matchMedia) {
+          var media = window.matchMedia('(prefers-color-scheme: dark)');
+          if (media && typeof media.matches === 'boolean') {
+            systemTheme = media.matches ? 'dark' : 'light';
+          }
+        }
         var theme = (stored === 'light' || stored === 'dark')
           ? stored
-          : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          : (systemTheme || 'dark');
         document.documentElement.dataset.theme = theme;
       } catch {
         document.documentElement.dataset.theme = 'dark';

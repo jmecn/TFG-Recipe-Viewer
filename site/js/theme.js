@@ -1,8 +1,10 @@
 import { getStoredTheme, setStoredTheme, THEME_STORAGE_KEY } from './constants.js';
 import { uiText } from './i18n.js';
 
-function systemPrefersDark() {
-  return Boolean(globalThis.matchMedia?.('(prefers-color-scheme: dark)')?.matches);
+function systemTheme() {
+  const media = globalThis.matchMedia?.('(prefers-color-scheme: dark)');
+  if (!media || typeof media.matches !== 'boolean') return null;
+  return media.matches ? 'dark' : 'light';
 }
 
 function normalizeTheme(value) {
@@ -10,11 +12,11 @@ function normalizeTheme(value) {
 }
 
 export function getActiveTheme() {
-  return normalizeTheme(document.documentElement?.dataset?.theme) || (systemPrefersDark() ? 'dark' : 'light');
+  return normalizeTheme(document.documentElement?.dataset?.theme) || systemTheme() || 'dark';
 }
 
 export function applyTheme(theme) {
-  const value = normalizeTheme(theme) || (systemPrefersDark() ? 'dark' : 'light');
+  const value = normalizeTheme(theme) || systemTheme() || 'dark';
   document.documentElement.dataset.theme = value;
   return value;
 }
@@ -47,7 +49,7 @@ export function initThemeToggle(locale = 'en_us') {
   if (media && !stored) {
     const handler = () => {
       if (localStorage.getItem(THEME_STORAGE_KEY)) return;
-      const next = systemPrefersDark() ? 'dark' : 'light';
+      const next = systemTheme() || 'dark';
       applyTheme(next);
       setIconVisibility(btn, next);
     };
