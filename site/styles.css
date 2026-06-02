@@ -21,6 +21,8 @@
   --tfg-skeleton-1: #1d1f29;
   --tfg-skeleton-2: #262a36;
   --tfg-skeleton-border: rgba(124, 158, 208, 0.22);
+  --tfg-boot-progress-track: rgba(255, 255, 255, 0.12);
+  --tfg-boot-progress-border: rgba(255, 255, 255, 0.08);
 
   /* Back-compat aliases (existing CSS uses these) */
   --bg: var(--tfg-bg);
@@ -49,6 +51,8 @@ html[data-theme="light"] {
   --tfg-skeleton-1: #eceff4;
   --tfg-skeleton-2: #dde3ec;
   --tfg-skeleton-border: rgba(102, 119, 145, 0.28);
+  --tfg-boot-progress-track: #e3e7ee;
+  --tfg-boot-progress-border: #cfd6e2;
 }
 
 * {
@@ -120,7 +124,8 @@ body.is-booting .app-main {
   width: min(280px, 70vw);
   height: 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--tfg-boot-progress-track);
+  border: 1px solid var(--tfg-boot-progress-border);
   overflow: hidden;
 }
 
