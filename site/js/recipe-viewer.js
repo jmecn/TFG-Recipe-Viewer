@@ -91,6 +91,7 @@ class RecipeViewer {
     this.els = {
       main: document.querySelector('.app-main'),
       bundleSelect: document.getElementById('bundle-select'),
+      bundleControl: document.querySelector('.header-control--bundle'),
       locale: document.getElementById('locale-select'),
       filter: document.getElementById('filter-input'),
       error: document.getElementById('app-error'),
@@ -129,13 +130,19 @@ class RecipeViewer {
     this.applyShellI18n();
   }
 
+  hasMultipleBundles() {
+    return this.catalog.bundles.length > 1;
+  }
+
   bindEvents() {
-    this.populateBundleSelect();
-    this.els.bundleSelect.addEventListener('change', () => {
-      const next = this.els.bundleSelect.value;
-      const route = { ...this.currentRoute, bundleToken: next };
-      this.navigate(route);
-    });
+    this.syncBundleSwitcher();
+    if (this.hasMultipleBundles()) {
+      this.els.bundleSelect.addEventListener('change', () => {
+        const next = this.els.bundleSelect.value;
+        const route = { ...this.currentRoute, bundleToken: next };
+        this.navigate(route);
+      });
+    }
     this.els.locale.addEventListener('change', () => this.onLocaleChange());
     this.els.filter.addEventListener('input', () => {
       clearTimeout(this.filterTimer);
@@ -156,7 +163,14 @@ class RecipeViewer {
     window.addEventListener('popstate', () => void this.syncRouteFromLocation());
   }
 
-  populateBundleSelect() {
+  syncBundleSwitcher() {
+    const show = this.hasMultipleBundles();
+    if (this.els.bundleControl) {
+      this.els.bundleControl.hidden = !show;
+    }
+    if (!show || !this.els.bundleSelect) {
+      return;
+    }
     this.els.bundleSelect.replaceChildren();
     const defaultOpt = document.createElement('option');
     defaultOpt.value = '_';
@@ -297,7 +311,9 @@ class RecipeViewer {
     this.categoriesManifest = parseCategoriesManifest(categoriesRes);
     this.populateLocaleSelect();
     this.applyShellI18n();
-    this.els.bundleSelect.value = bundleToken;
+    if (this.hasMultipleBundles() && this.els.bundleSelect) {
+      this.els.bundleSelect.value = bundleToken;
+    }
     await this.loadItemsLangIndex();
   }
 

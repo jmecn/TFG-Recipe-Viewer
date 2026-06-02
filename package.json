@@ -4,7 +4,7 @@
   "description": "TFG EMI recipe browser — static site built in CI from Modpack-Modern exports",
   "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": ">=24"
   },
   "scripts": {
     "postinstall": "mkdir -p site && cp language.json site/language.json",
@@ -18,7 +18,7 @@
     "start": "npm run sync-language && npm run validate && npm run serve"
   },
   "dependencies": {
-    "emi-bundle-optimize": "^0.4.2",
+    "emi-bundle-optimize": "^0.4.4",
     "emi-recipe-renderer": "^0.6.0"
   }
 }
