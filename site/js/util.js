@@ -20,13 +20,10 @@ export function setFormattedText(el, text) {
   el.textContent = stripFormattedText(text);
 }
 
-export function displayNameForId(renderer, id) {
+export function lookupLabelForId(viewer, id) {
   const bare = canonicalItemId(id);
-  const asItem = renderer.translateRegistry(id, 'item');
-  if (asItem && asItem !== bare) return asItem;
-  const asFluid = renderer.translateRegistry(id, 'fluid');
-  if (asFluid && asFluid !== bare) return asFluid;
-  return bare;
+  const label = viewer?.itemLabelById?.[bare];
+  return label != null && label !== '' ? label : bare;
 }
 
 export function canonicalItemId(id) {

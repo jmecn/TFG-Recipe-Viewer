@@ -45,7 +45,7 @@ import {
 import {
   buildPageRange,
   canonicalItemId,
-  displayNameForId,
+  lookupLabelForId,
   normalizedFilterQuery,
   setFormattedText,
   yieldToMain,
@@ -80,6 +80,7 @@ class RecipeViewer {
     this.tagMembersPage = 1;
     this.tagMembersAll = [];
     this.itemSearchRows = null;
+    this.itemLabelById = null;
     this.itemDetailLoadSeq = 0;
     this.virtual = {
       recipes: { ids: [], container: null, raf: 0, renderKey: null, visibleRange: null },
@@ -297,7 +298,7 @@ class RecipeViewer {
     this.populateLocaleSelect();
     this.applyShellI18n();
     this.els.bundleSelect.value = bundleToken;
-    await this.loadItemsSearchIndex();
+    await this.loadItemsLangIndex();
   }
 
   itemExists(itemId) {
@@ -385,7 +386,7 @@ class RecipeViewer {
   async ensureItemRenderer() {
     const r = await this.ensureRenderer();
     await Promise.all([
-      r.ensureItemNameKeys?.() ?? Promise.resolve(),
+      r.ensureRegistryLabels?.() ?? Promise.resolve(),
       r.ensureIconStylesheets(),
       r.ensureCategoryIconStylesheets?.() ?? Promise.resolve(),
     ]);
@@ -489,7 +490,7 @@ class RecipeViewer {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     try {
       await this.ensureRenderer();
-      const loaded = await this.loadItemsSearchIndex();
+      const loaded = await this.loadItemsLangIndex();
       if (loaded && this.currentRoute.view === 'items' && normalizedFilterQuery(this.els.filter.value)) {
         void this.renderItems();
       }
@@ -501,25 +502,45 @@ class RecipeViewer {
 
   invalidateItemSearchIndex() {
     this.itemSearchRows = null;
+    this.itemLabelById = null;
+    this.renderer?.setRegistryLabels?.(Object.create(null));
   }
 
-  async loadItemsSearchIndex() {
+  syncRegistryLabelsToRenderer() {
+    if (this.renderer?.setRegistryLabels && this.itemLabelById) {
+      this.renderer.setRegistryLabels(this.itemLabelById);
+    }
+  }
+
+  async loadItemsLangIndex() {
     if (!this.itemIds.length) {
       this.itemSearchRows = null;
+      this.itemLabelById = null;
+      this.syncRegistryLabelsToRenderer();
       return false;
     }
     const loc = normalizeLocale(this.locale);
-    const data = await loadBundleJson(this.baseUrl, `items-search/${loc}.json`, null);
+    const data = await loadBundleJson(this.baseUrl, `items-lang/${loc}.json`, null);
     if (!data?.items?.length) {
       this.itemSearchRows = null;
+      this.itemLabelById = null;
+      this.syncRegistryLabelsToRenderer();
       return false;
     }
     const idToHay = new Map();
+    const labels = Object.create(null);
     for (const row of data.items) {
-      if (row?.id && row.haystack != null) {
+      if (!row?.id) continue;
+      const bare = canonicalItemId(row.id);
+      if (row.haystack != null) {
         idToHay.set(row.id, String(row.haystack).toLowerCase());
       }
+      if (row.label != null) {
+        labels[bare] = String(row.label);
+      }
     }
+    this.itemLabelById = labels;
+    this.syncRegistryLabelsToRenderer();
     const rows = new Array(this.itemIds.length);
     for (let i = 0; i < this.itemIds.length; i++) {
       const id = this.itemIds[i];
@@ -540,7 +561,7 @@ class RecipeViewer {
     const q = normalizedFilterQuery(this.els.filter.value);
     if (!q) return base;
     if (this.itemSearchRows && this.itemSearchRows.length === this.itemIds.length) return base;
-    return `${base} ${this.ui('itemsSearchMissing')}`;
+    return `${base} ${this.ui('itemsLangMissing')}`;
   }
 
   filteredItemIds() {
@@ -596,7 +617,7 @@ class RecipeViewer {
     text.className = 'item-card-text';
     const name = document.createElement('div');
     name.className = 'item-card-name';
-    setFormattedText(name, displayNameForId(renderer, id));
+    setFormattedText(name, lookupLabelForId(this, id));
     const idEl = document.createElement('div');
     idEl.className = 'item-card-id';
     idEl.textContent = id;
@@ -1219,7 +1240,7 @@ class RecipeViewer {
     text.className = 'item-detail-body';
     const title = document.createElement('h1');
     title.className = 'item-detail-title';
-    setFormattedText(title, displayNameForId(renderer, canonicalId));
+    setFormattedText(title, lookupLabelForId(this, canonicalId));
     const sub = document.createElement('p');
     sub.className = 'item-detail-id';
     sub.textContent = canonicalId;

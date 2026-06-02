@@ -1,6 +1,6 @@
 import { FALLBACK_LOCALE } from './constants.js';
 import { fetchWithAssetCache, joinBase } from './http.js';
-import { uiText } from './i18n.js';
+import { normalizeLocale, uiText } from './i18n.js';
 
 /** Warm bundle.json, lang, icon index/css, and priority atlas pages (Cache API + HTTP cache). */
 export async function warmBundleAssets(baseUrl, locale, onStatus) {
@@ -13,11 +13,9 @@ export async function warmBundleAssets(baseUrl, locale, onStatus) {
     bundle = {};
   }
 
-  const activeLocale = String(locale || FALLBACK_LOCALE).trim() || FALLBACK_LOCALE;
-  const langCodes = new Set([FALLBACK_LOCALE, activeLocale]);
-  for (const code of bundle.languages || []) {
-    if (typeof code === 'string' && code.length) langCodes.add(code);
-  }
+  const activeLocale = normalizeLocale(locale || FALLBACK_LOCALE);
+  const langCodes = new Set([FALLBACK_LOCALE]);
+  if (activeLocale !== FALLBACK_LOCALE) langCodes.add(activeLocale);
 
   onStatus?.(uiText(locale, 'bootLoadingLang'));
   await Promise.all([...langCodes].map(async (code) => {
@@ -59,7 +57,7 @@ export async function warmBundleAssets(baseUrl, locale, onStatus) {
   }
 
   onStatus?.(uiText(locale, 'bootLoadingSearch'));
-  await fetchWithAssetCache(joinBase(baseUrl, `items-search/${activeLocale}.json`));
+  await fetchWithAssetCache(joinBase(baseUrl, `items-lang/${activeLocale}.json`));
 
   const cachedHint = bundleWrap.fromCache ? uiText(locale, 'cacheHint') : '';
   onStatus?.(uiText(locale, 'bootEntering', { cachedHint }));

@@ -19,6 +19,6 @@
   },
   "dependencies": {
     "emi-bundle-optimize": "^0.4.2",
-    "emi-recipe-renderer": "^0.5.5"
+    "emi-recipe-renderer": "^0.6.0"
   }
 }
