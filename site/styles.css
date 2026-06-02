@@ -262,6 +262,10 @@ body.is-booting .app-main {
   cursor: pointer;
 }
 
+.header-control[hidden] {
+  display: none !important;
+}
+
 .header-control:focus-within {
   border-color: #4a6a94;
 }

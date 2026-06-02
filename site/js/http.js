@@ -44,20 +44,23 @@ export async function fetchWithAssetCache(url) {
 export function loadBundleJson(baseUrl, path, fallbackValue) {
   const key = joinBase(baseUrl, path);
   if (!bundleJsonCache.has(key)) {
-    bundleJsonCache.set(key, fetch(key)
-      .then(async (r) => {
-        if (!r.ok) return fallbackValue;
-        const contentType = String(r.headers.get('content-type') || '').toLowerCase();
+    bundleJsonCache.set(key, (async () => {
+      try {
+        const { response } = await fetchWithAssetCache(key);
+        if (!response.ok) return fallbackValue;
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
         if (!contentType.includes('application/json')) {
           return fallbackValue;
         }
         try {
-          return await r.json();
+          return await response.json();
         } catch {
           return fallbackValue;
         }
-      })
-      .catch(() => fallbackValue));
+      } catch {
+        return fallbackValue;
+      }
+    })());
   }
   return bundleJsonCache.get(key);
 }

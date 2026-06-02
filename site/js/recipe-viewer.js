@@ -291,7 +291,13 @@ class RecipeViewer {
     await warmBundleAssets(this.baseUrl, this.locale, onStatus);
 
     onStatus?.(this.ui('bootLoadingItemsIndex'));
-    const renderer = new EmiRecipeRenderer(this.rendererOptions());
+    const loc = normalizeLocale(this.locale);
+    const itemsLangData = await loadBundleJson(this.baseUrl, `items-lang/${loc}.json`, null);
+    const registryLabels = this.buildItemLabelTable(itemsLangData);
+    const renderer = new EmiRecipeRenderer({
+      ...this.rendererOptions(),
+      registryLabels,
+    });
     const [recipeIndex, bundleRes, itemsRes, categoriesRes] = await Promise.all([
       renderer.loadIndex(),
       renderer.ensureBundle(),
@@ -314,7 +320,7 @@ class RecipeViewer {
     if (this.hasMultipleBundles() && this.els.bundleSelect) {
       this.els.bundleSelect.value = bundleToken;
     }
-    await this.loadItemsLangIndex();
+    await this.applyItemsLangData(itemsLangData);
   }
 
   itemExists(itemId) {
@@ -528,15 +534,23 @@ class RecipeViewer {
     }
   }
 
-  async loadItemsLangIndex() {
+  buildItemLabelTable(data) {
+    const labels = Object.create(null);
+    if (!data?.items?.length) return labels;
+    for (const row of data.items) {
+      if (!row?.id || row.label == null) continue;
+      labels[canonicalItemId(row.id)] = String(row.label);
+    }
+    return labels;
+  }
+
+  async applyItemsLangData(data) {
     if (!this.itemIds.length) {
       this.itemSearchRows = null;
       this.itemLabelById = null;
       this.syncRegistryLabelsToRenderer();
       return false;
     }
-    const loc = normalizeLocale(this.locale);
-    const data = await loadBundleJson(this.baseUrl, `items-lang/${loc}.json`, null);
     if (!data?.items?.length) {
       this.itemSearchRows = null;
       this.itemLabelById = null;
@@ -544,16 +558,10 @@ class RecipeViewer {
       return false;
     }
     const idToHay = new Map();
-    const labels = Object.create(null);
+    const labels = this.buildItemLabelTable(data);
     for (const row of data.items) {
-      if (!row?.id) continue;
-      const bare = canonicalItemId(row.id);
-      if (row.haystack != null) {
-        idToHay.set(row.id, String(row.haystack).toLowerCase());
-      }
-      if (row.label != null) {
-        labels[bare] = String(row.label);
-      }
+      if (!row?.id || row.haystack == null) continue;
+      idToHay.set(row.id, String(row.haystack).toLowerCase());
     }
     this.itemLabelById = labels;
     this.syncRegistryLabelsToRenderer();
@@ -570,6 +578,14 @@ class RecipeViewer {
     }
     this.itemSearchRows = rows;
     return true;
+  }
+
+  async loadItemsLangIndex() {
+    const loc = normalizeLocale(this.locale);
+    const data = await loadBundleJson(this.baseUrl, `items-lang/${loc}.json`, null);
+    const labels = this.buildItemLabelTable(data);
+    this.renderer?.setRegistryLabels?.(labels);
+    return this.applyItemsLangData(data);
   }
 
   itemsFilterSummary(matchCount) {

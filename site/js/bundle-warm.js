@@ -56,9 +56,6 @@ export async function warmBundleAssets(baseUrl, locale, onStatus) {
     await Promise.all(preloadUrls.map((url) => fetchWithAssetCache(url)));
   }
 
-  onStatus?.(uiText(locale, 'bootLoadingSearch'));
-  await fetchWithAssetCache(joinBase(baseUrl, `items-lang/${activeLocale}.json`));
-
   const cachedHint = bundleWrap.fromCache ? uiText(locale, 'cacheHint') : '';
   onStatus?.(uiText(locale, 'bootEntering', { cachedHint }));
   return bundle;
