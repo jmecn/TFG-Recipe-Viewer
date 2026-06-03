@@ -40,6 +40,8 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout viewer
         uses: actions/checkout@v6
