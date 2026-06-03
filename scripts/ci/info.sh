@@ -17,19 +17,40 @@ cmd_print_versions() {
     unset MODPACK_TAG
   fi
 
-  local modpack mwe site renderer optimize hmc bundle_id
+  local modpack mwe site renderer optimize hmc bundle_id meta_file
 
-  modpack="$(resolve_modpack_tag)" || exit 1
-  if [[ -z "$modpack" ]]; then
-    echo "::error::Could not resolve Modpack-Modern release tag" >&2
-    exit 1
+  meta_file="$ROOT/export-meta/bundle-id"
+  if [[ -f "$meta_file" ]]; then
+    bundle_id="$(tr -d '[:space:]' < "$meta_file")"
+    if [[ -z "$bundle_id" ]]; then
+      echo "::error::export-meta/bundle-id is empty" >&2
+      exit 1
+    fi
+    modpack="${bundle_id#tfg-}"
+    echo "bundle from export-meta: ${bundle_id}"
+  else
+    modpack="$(resolve_modpack_tag)" || exit 1
+    if [[ -z "$modpack" ]]; then
+      echo "::error::Could not resolve Modpack-Modern release tag" >&2
+      exit 1
+    fi
+    bundle_id="tfg-${modpack}"
   fi
-  bundle_id="tfg-${modpack}"
+
+  export MODPACK_TAG="$modpack"
+  export BUNDLE_ID="$bundle_id"
   mwe="$(resolve_mwe_tag)"
   site="$(resolve_site_viewer_version)"
   renderer="$(resolve_renderer_version)"
   optimize="$(resolve_optimize_version)"
   hmc="$(resolve_hmc_version)"
+
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    {
+      printf 'modpack_tag=%s\n' "$modpack"
+      printf 'bundle_id=%s\n' "$bundle_id"
+    } >> "$GITHUB_OUTPUT"
+  fi
 
   if [[ -n "${GITHUB_ENV:-}" ]]; then
     {

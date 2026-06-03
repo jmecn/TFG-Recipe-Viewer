@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       modpack_tag:
-        description: Modpack 版本
+        description: Modpack Release Tag
         required: false
         default: ""
   workflow_run:
@@ -43,23 +43,15 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout viewer
+      - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
-      - name: Load CI config
+      - name: Load Config
         run: bash scripts/ci.sh load-config
 
-      - name: Resolve and print versions
-        env:
-          MODPACK_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.modpack_tag || '' }}
-        run: bash scripts/ci.sh print-versions
-
-      - name: Fetch viewer site from React release
-        run: bash scripts/ci.sh fetch-viewer-site
-
-      - name: Download export metadata
+      - name: Download Exported Metadata
         if: github.event_name == 'workflow_run'
         uses: actions/download-artifact@v4
         with:
@@ -67,24 +59,14 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
-      - name: Resolve bundle
+      - name: Resolve Versions
         id: metadata
-        run: |
-          if [ -f export-meta/bundle-id ]; then
-            echo "bundle_id=$(cat export-meta/bundle-id)" >> "$GITHUB_OUTPUT"
-          else
-            bash scripts/ci.sh resolve-bundle-id
-          fi
+        env:
+          MODPACK_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.modpack_tag || '' }}
+        run: bash scripts/ci.sh print-versions
 
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Prep Node
-        run: bash scripts/ci.sh prep-node
+      - name: Fetch Web UI
+        run: bash scripts/ci.sh fetch-viewer-site
 
       - name: Download raw bundle artifact from triggering Export
         if: github.event_name == 'workflow_run'
@@ -109,15 +91,22 @@ jobs:
           GITHUB_REF_NAME: ${{ github.ref_name }}
         run: bash scripts/ci.sh fetch-raw-bundle
 
-      - name: Verify raw bundle (schema 2)
-        run: bash scripts/ci.sh verify-emi-bundle
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
 
-      - name: Optimize and stage bundle
+      - name: Optimize Bundle
         env:
           BUNDLE_ID: ${{ steps.metadata.outputs.bundle_id }}
-        run: bash scripts/ci.sh optimize-and-stage
+        run: |
+          bash scripts/ci.sh prep-node
+          bash scripts/ci.sh verify-emi-bundle
+          bash scripts/ci.sh optimize-and-stage
 
-      - name: Prepare site for deploy
+      - name: Prepare Pages
         env:
           BUNDLE_ID: ${{ steps.metadata.outputs.bundle_id }}
         run: bash scripts/ci.sh prep-deploy-site
