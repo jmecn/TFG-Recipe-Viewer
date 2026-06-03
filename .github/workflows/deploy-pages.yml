@@ -53,7 +53,7 @@ jobs:
 
       - name: Resolve and print versions
         env:
-          MODPACK_TAG: ${{ github.event.inputs.modpack_tag }}
+          MODPACK_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.modpack_tag || '' }}
         run: bash scripts/ci.sh print-versions
 
       - name: Fetch viewer site from React release
@@ -73,7 +73,7 @@ jobs:
           if [ -f export-meta/bundle-id ]; then
             echo "bundle_id=$(cat export-meta/bundle-id)" >> "$GITHUB_OUTPUT"
           else
-            echo "bundle_id=tfg-${MODPACK_TAG}" >> "$GITHUB_OUTPUT"
+            bash scripts/ci.sh resolve-bundle-id
           fi
 
       - name: Setup Node

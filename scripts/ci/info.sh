@@ -12,9 +12,18 @@ source "$CI_DIR/lib/modpack-tag.sh"
 cmd_print_versions() {
   ci_load_config
 
+  # workflow_dispatch 留空时会注入 MODPACK_TAG=""，视为未指定以便解析最新 tag
+  if [[ -z "${MODPACK_TAG:-}" ]]; then
+    unset MODPACK_TAG
+  fi
+
   local modpack mwe site renderer optimize hmc bundle_id
 
-  modpack="$(resolve_modpack_tag)"
+  modpack="$(resolve_modpack_tag)" || exit 1
+  if [[ -z "$modpack" ]]; then
+    echo "::error::Could not resolve Modpack-Modern release tag" >&2
+    exit 1
+  fi
   bundle_id="tfg-${modpack}"
   mwe="$(resolve_mwe_tag)"
   site="$(resolve_site_viewer_version)"
@@ -25,6 +34,7 @@ cmd_print_versions() {
   if [[ -n "${GITHUB_ENV:-}" ]]; then
     {
       printf 'MODPACK_TAG=%s\n' "$modpack"
+      printf 'BUNDLE_ID=%s\n' "$bundle_id"
       printf 'MWE_TAG=%s\n' "$mwe"
       printf 'SITE_VIEWER_VERSION=%s\n' "$site"
       printf 'RENDERER_VERSION=%s\n' "$renderer"

@@ -32,7 +32,7 @@ jobs:
 
       - name: Resolve and print versions
         env:
-          MODPACK_TAG: ${{ github.event.inputs.modpack_tag }}
+          MODPACK_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.modpack_tag || '' }}
         run: bash scripts/ci.sh print-versions
 
       - name: Setup Node

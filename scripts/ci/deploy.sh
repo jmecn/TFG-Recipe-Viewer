@@ -15,9 +15,24 @@ source "$CI_DIR/lib/github-release.sh"
 source "$CI_DIR/lib/viewer-site.sh"
 
 cmd_resolve_bundle_id() {
+  if [[ -z "${MODPACK_TAG:-}" ]]; then
+    unset MODPACK_TAG
+  fi
+
   local tag id
-  tag="$(resolve_modpack_tag)"
+  tag="$(resolve_modpack_tag)" || exit 1
+  if [[ -z "$tag" ]]; then
+    echo "::error::Could not resolve Modpack-Modern release tag" >&2
+    exit 1
+  fi
   id="tfg-${tag}"
+  export MODPACK_TAG="$tag"
+  export BUNDLE_ID="$id"
+
+  if [[ -n "${GITHUB_ENV:-}" ]]; then
+    printf 'MODPACK_TAG=%s\n' "$tag" >> "$GITHUB_ENV"
+    printf 'BUNDLE_ID=%s\n' "$id" >> "$GITHUB_ENV"
+  fi
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     {
       echo "modpack_tag=$tag"
@@ -61,6 +76,9 @@ cmd_extract_raw_bundle() {
 }
 
 cmd_fetch_raw_bundle() {
+  if [[ -z "${BUNDLE_ID:-}" || "$BUNDLE_ID" == "tfg-" ]]; then
+    cmd_resolve_bundle_id
+  fi
   local bundle_id="${BUNDLE_ID:?BUNDLE_ID required}"
   local artifact_name="emi-raw-${bundle_id}"
   local export_raw="${EXPORT_RAW:?EXPORT_RAW required}"
