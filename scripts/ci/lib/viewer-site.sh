@@ -9,24 +9,25 @@ fetch_viewer_site_release() {
   version="$(resolve_site_viewer_version)" || return 1
   echo "TFG-Recipe-Viewer-React site @ v${version}"
   tag="v${version}"
-  local archive="tfg-recipe-viewer-site-v${version}.tar.gz"
 
   if ! command -v gh >/dev/null 2>&1; then
     echo "::error::gh CLI required to download viewer site from ${repo} ${tag}" >&2
     return 1
   fi
 
-  local staging
+  local staging archive
   staging="$(mktemp -d)"
-  trap 'rm -rf "$staging"' RETURN
+  archive="tfg-recipe-viewer-site-v${version}.tar.gz"
 
   echo "::group::Fetch viewer site ${tag} (${repo})"
-  (
-    cd "$staging"
-    gh release download "$tag" --repo "$repo" --pattern "$archive" --clobber
-  )
+  if ! ( cd "$staging" && gh release download "$tag" --repo "$repo" --pattern "$archive" --clobber ); then
+    rm -rf "$staging"
+    echo "::error::gh release download failed for ${repo} ${tag} pattern ${archive}" >&2
+    return 1
+  fi
 
   if [[ ! -f "$staging/$archive" ]]; then
+    rm -rf "$staging"
     echo "::error::Release asset ${archive} not found on ${repo} tag ${tag}" >&2
     return 1
   fi
@@ -36,11 +37,13 @@ fetch_viewer_site_release() {
   tar -xzf "$staging/$archive" -C "$site_dir"
 
   if [[ ! -f "$site_dir/index.html" ]]; then
+    rm -rf "$staging"
     echo "::error::Extracted site missing index.html (layout=dist-root expected)" >&2
     return 1
   fi
 
   if [[ ! -f "$site_dir/bundles.json" ]]; then
+    rm -rf "$staging"
     echo "::error::Extracted site missing bundles.json" >&2
     return 1
   fi
@@ -59,4 +62,5 @@ fetch_viewer_site_release() {
 
   echo "Viewer site installed at ${site_dir} (${archive})"
   echo "::endgroup::"
+  rm -rf "$staging"
 }
