@@ -20,8 +20,10 @@ ci_load_config() {
 
   export RUNNER_HOME JAVA_VERSION NODE_VERSION
   export MC_VERSION MC_ASSET_INDEX FORGE_BUILD
-  export HMC_VERSION MODPACK_DIR MODPACK_TAG
-  export MWE_VERSION RENDERER_VERSION OPTIMIZE_VERSION
+  export HMC_REPO HMC_VERSION MODPACK_DIR MODPACK_REPO MODPACK_TAG
+  export MWE_REPO MWE_VERSION
+  export SITE_VIEWER_REPO SITE_VIEWER_VERSION
+  export RENDERER_REPO RENDERER_VERSION OPTIMIZE_REPO OPTIMIZE_VERSION
   export EXPORT_WARMUP_TICKS EXPORT_TIMEOUT_SECONDS
   export EXPORT_RAW EXPORT_BUNDLE EXPORT_OPT_STAGING
   export EXPORT_RAW_DIR EXPORT_BUNDLE_SUBDIR EXPORT_OPT_DIR
@@ -34,12 +36,19 @@ ci_load_config() {
       printf 'MC_VERSION=%s\n' "$MC_VERSION"
       printf 'MC_ASSET_INDEX=%s\n' "$MC_ASSET_INDEX"
       printf 'FORGE_BUILD=%s\n' "$FORGE_BUILD"
-      printf 'HMC_VERSION=%s\n' "$HMC_VERSION"
+      printf 'HMC_REPO=%s\n' "${HMC_REPO:-3arthqu4ke/headlessmc}"
+      printf 'HMC_VERSION=%s\n' "${HMC_VERSION:-}"
       printf 'MODPACK_DIR=%s\n' "$MODPACK_DIR"
+      printf 'MODPACK_REPO=%s\n' "${MODPACK_REPO:-https://github.com/TerraFirmaGreg-Team/Modpack-Modern.git}"
       printf 'MODPACK_TAG=%s\n' "${MODPACK_TAG:-}"
-      printf 'MWE_VERSION=%s\n' "$MWE_VERSION"
-      printf 'RENDERER_VERSION=%s\n' "$RENDERER_VERSION"
-      printf 'OPTIMIZE_VERSION=%s\n' "$OPTIMIZE_VERSION"
+      printf 'MWE_REPO=%s\n' "${MWE_REPO:-jmecn/minecraft-web-export}"
+      printf 'MWE_VERSION=%s\n' "${MWE_VERSION:-}"
+      printf 'RENDERER_REPO=%s\n' "${RENDERER_REPO:-jmecn/emi-recipe-renderer}"
+      printf 'RENDERER_VERSION=%s\n' "${RENDERER_VERSION:-}"
+      printf 'OPTIMIZE_REPO=%s\n' "${OPTIMIZE_REPO:-jmecn/emi-bundle-optimize}"
+      printf 'OPTIMIZE_VERSION=%s\n' "${OPTIMIZE_VERSION:-}"
+      printf 'SITE_VIEWER_REPO=%s\n' "${SITE_VIEWER_REPO:-jmecn/TFG-Recipe-Viewer-React}"
+      printf 'SITE_VIEWER_VERSION=%s\n' "${SITE_VIEWER_VERSION:-}"
       printf 'EXPORT_WARMUP_TICKS=%s\n' "$EXPORT_WARMUP_TICKS"
       printf 'EXPORT_TIMEOUT_SECONDS=%s\n' "$EXPORT_TIMEOUT_SECONDS"
       printf 'EXPORT_RAW_DIR=%s\n' "${EXPORT_RAW_DIR:-export-raw}"

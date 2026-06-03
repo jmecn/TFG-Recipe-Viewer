@@ -5,8 +5,14 @@ CI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$CI_DIR/../.." && pwd)"
 # shellcheck source=lib/modpack-tag.sh
 source "$CI_DIR/lib/modpack-tag.sh"
+# shellcheck source=lib/env.sh
+source "$CI_DIR/lib/env.sh"
 # shellcheck source=lib/bundle.sh
 source "$CI_DIR/lib/bundle.sh"
+# shellcheck source=lib/github-release.sh
+source "$CI_DIR/lib/github-release.sh"
+# shellcheck source=lib/viewer-site.sh
+source "$CI_DIR/lib/viewer-site.sh"
 
 cmd_resolve_bundle_id() {
   local tag id
@@ -115,9 +121,19 @@ cmd_optimize_and_stage() {
   echo "Optimized bundle staged at site/bundles/$bundle_id"
 }
 
+cmd_fetch_viewer_site() {
+  ci_load_config
+  fetch_viewer_site_release
+}
+
 cmd_prep_deploy_site() {
   local bundle_id="${BUNDLE_ID:?BUNDLE_ID required}"
   local bundle_root="$ROOT/site/bundles/$bundle_id"
+
+  if [[ ! -f "$ROOT/site/index.html" ]]; then
+    echo "::error::Missing site/index.html — run fetch-viewer-site first." >&2
+    exit 1
+  fi
 
   if [[ ! -f "$bundle_root/bundle.json" ]]; then
     echo "::error::Missing bundle at site/bundles/$bundle_id — run Deploy Pages after a successful Export (emi-raw-$bundle_id artifact)." >&2
@@ -125,17 +141,20 @@ cmd_prep_deploy_site() {
   fi
 
   cd "$ROOT"
-  patch_renderer_version_meta
   npm run copy -- --id "$bundle_id" "$bundle_root"
   npm run validate
-  test -f site/js/main.js
-  echo "Deploy site ready (bundle: $bundle_id)"
+  if ! compgen -G "site/assets/*.js" > /dev/null; then
+    echo "::error::Missing site/assets/*.js — viewer site release may be corrupt." >&2
+    exit 1
+  fi
+  echo "Deploy site ready (bundle: $bundle_id, viewer: v$(resolve_site_viewer_version))"
 }
 
 cmd="${1:?deploy.sh: missing command}"
 shift
 case "$cmd" in
   resolve-bundle-id) cmd_resolve_bundle_id ;;
+  fetch-viewer-site) cmd_fetch_viewer_site ;;
   extract-raw-bundle) cmd_extract_raw_bundle ;;
   fetch-raw-bundle) cmd_fetch_raw_bundle ;;
   verify-emi-bundle) cmd_verify_emi_bundle ;;

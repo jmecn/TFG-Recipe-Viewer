@@ -29,8 +29,9 @@ cmd_load_config() { ci_load_config; }
 
 cmd_prep_node() {
   cd "$ROOT"
-  local renderer_ver="${RENDERER_VER:-${RENDERER_VERSION:?RENDERER_VER or RENDERER_VERSION required}}"
-  local optimize_ver="${OPTIMIZE_VER:-${OPTIMIZE_VERSION:?OPTIMIZE_VER or OPTIMIZE_VERSION required}}"
+  local renderer_ver optimize_ver
+  renderer_ver="$(resolve_renderer_version)" || exit 1
+  optimize_ver="$(resolve_optimize_version)" || exit 1
   npm pkg set "dependencies.emi-recipe-renderer=${renderer_ver}"
   npm pkg set "dependencies.emi-bundle-optimize=${optimize_ver}"
   npm install --no-audit --no-fund
@@ -84,7 +85,12 @@ cmd_prepare_metadata() {
 
 cmd_install_mwe() {
   local mp="${MODPACK_DIR:-$ROOT/Modpack-Modern}"
-  local mwe_tag="${MWE_TAG:-${MWE_VERSION:?MWE_VERSION or MWE_TAG required}}"
+  local mwe_tag
+  mwe_tag="$(resolve_mwe_tag)" || exit 1
+  echo "minecraft-web-export @ ${mwe_tag}"
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    echo "tag=${mwe_tag}" >> "$GITHUB_OUTPUT"
+  fi
   local ver="${mwe_tag#v}"
   local jar_name="minecraft-web-export-${ver}.jar"
 
@@ -137,7 +143,8 @@ cmd_resolve_export_languages() {
 
 cmd_setup_hmc() {
   cd "$ROOT"
-  local hmc_ver="${HMC_VERSION:?HMC_VERSION required}"
+  local hmc_ver
+  hmc_ver="$(resolve_hmc_version)" || exit 1
   local mc_ver="${MC_VERSION:?MC_VERSION required}"
   local forge="${FORGE_BUILD:?FORGE_BUILD required}"
   local mp="${MODPACK_DIR:-$ROOT/Modpack-Modern}"
@@ -169,7 +176,8 @@ EOF
 
 cmd_launch_mc_export() {
   local mp="${MODPACK_DIR:-$ROOT/Modpack-Modern}"
-  local hmc_ver="${HMC_VERSION:?HMC_VERSION required}"
+  local hmc_ver
+  hmc_ver="$(resolve_hmc_version)" || exit 1
   local launcher="headlessmc-launcher-${hmc_ver}.jar"
 
   mkdir -p "$mp/config" "$mp/saves" "${EXPORT_RAW:?EXPORT_RAW required}"

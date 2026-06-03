@@ -19,11 +19,3 @@ verify_emi_bundle() {
   cd "$ROOT"
   npx emi-bundle-optimize validate "$bundle"
 }
-
-patch_renderer_version_meta() {
-  local ver="${RENDERER_VERSION:?RENDERER_VERSION required}"
-  local index="$ROOT/site/index.html"
-  sed -i.bak "s/name=\"emi-renderer-version\" content=\"[^\"]*\"/name=\"emi-renderer-version\" content=\"${ver}\"/" "$index"
-  rm -f "$index.bak"
-  echo "site/index.html emi-renderer-version -> ${ver}"
-}

@@ -1,76 +1,61 @@
 # TFG Recipe Viewer
 
-TerraFirmaGreg Modern 配方静态浏览站：由 GitHub Actions 从 [Modpack-Modern](https://github.com/TerraFirmaGreg-Team/Modpack-Modern) 最新 release tag 导出 EMI bundle，经 [emi-bundle-optimize](https://github.com/jmecn/emi-bundle-optimize) 优化后，用 [emi-recipe-renderer](https://github.com/jmecn/emi-recipe-renderer) 在浏览器中展示。
+TerraFirmaGreg Modern 配方浏览站流水线：从 [Modpack-Modern](https://github.com/TerraFirmaGreg-Team/Modpack-Modern) 导出 EMI bundle，用 [emi-bundle-optimize](https://github.com/jmecn/emi-bundle-optimize) 优化，在 [TFG-Recipe-Viewer-React](https://github.com/jmecn/TFG-Recipe-Viewer-React) 发布的静态前端上展示。
 
-本仓库**不包含** `site/bundles/` 数据。CI 用两条 workflow 分工：
+- **前端**：Deploy 时从 React 仓库 **最新 semver Release** 拉取（版本钉在 `ci/build.env`）。
+- **旧版静态站**：已迁至同级目录 [TFG-Recipe-Viewer-Vanilla](../TFG-Recipe-Viewer-Vanilla/) 备份；本仓库 `site/` 仅保留 `bundles/` 占位，由 CI 填充。
 
-| 数据来源 | 内容 | 何时使用 |
-|----------|------|----------|
-| Artifact `emi-raw-<bundle_id>` | `emi/` 目录（GitHub 存成 zip 下载） | **Deploy 唯一来源**（`workflow_run` 或 `gh run download`） |
-| （无 raw Actions cache） | Export 不再 `cache/save` raw；Deploy **不** `cache/restore` | 避免命中 schema 1 旧条目 |
-| （无 optimized cache） | optimize 在 Deploy 时从 raw 现算 | **Deploy Pages** |
-
-## 本地开发（已有 bundle）
+## 本地开发
 
 ```bash
 npm install
+npm run fetch-site
 npm run copy -- --id tfg-0.12.8 /path/to/optimized-bundle
 npm start
 ```
 
-本地优化导出目录：
+查看将解析到的 Release 版本：
 
 ```bash
-npm run optimize -- --in /path/to/export-raw/emi --out /path/to/export-opt --force --prune-lang
+bash scripts/ci.sh load-config && bash scripts/ci.sh print-versions
 ```
 
-## CI 前置
+## CI 版本策略
 
-| 依赖 | 发布物 | CI 获取方式 |
-|------|--------|-------------|
-| [minecraft-web-export](https://github.com/jmecn/minecraft-web-export) | GitHub Release **jar** | 按 tag 下载 |
-| [emi-recipe-renderer](https://github.com/jmecn/emi-recipe-renderer) | **npm** 包 | Deploy 时安装 |
-| [emi-bundle-optimize](https://github.com/jmecn/emi-bundle-optimize) | **npm** CLI | **Deploy** 时 optimize |
+`ci/build.env` 只保留 **MC/Forge/Node** 等运行时常量。下列组件在 workflow 里执行 `print-versions` 时，若对应 `*_VERSION` 为空，则通过 `scripts/ci/lib/github-release.sh` 取 GitHub **最新 semver tag**：
 
-版本钉在 `ci/build.env`。先发布 npm 包，再跑本仓库 CI。
+| 组件 | 仓库 |
+|------|------|
+| Modpack-Modern | `MODPACK_REPO` |
+| minecraft-web-export | `MWE_REPO` |
+| TFG-Recipe-Viewer-React | `SITE_VIEWER_REPO` |
+| emi-recipe-renderer | `RENDERER_REPO` |
+| emi-bundle-optimize | `OPTIMIZE_REPO` |
+| HeadlessMC | `HMC_REPO` |
 
-## CI 流水线
+日志中会打印 `::group::CI resolved versions` 块，并写入 Job Summary 表格。需要回滚时在 `build.env` 填 `*_VERSION`；手动 Run 时只需填 **Modpack 版本**（留空=最新）。
 
-### 1. Export EMI bundle（重，几小时）
+## 流水线
 
-Modpack → HeadlessMC 全量 EMI 导出 → 校验 → 上传 **Artifacts**（`export-meta` + `emi-raw-<bundle_id>` 即 `emi/` 树）→ 自动触发 Deploy。
+### Export EMI bundle
 
-Actions → **Export EMI bundle** → Run workflow
+Modpack → HeadlessMC 导出 → 上传 `emi-raw-<bundle_id>` artifact → 触发 Deploy。
 
-**不做 optimize**（避免与 optimize 工具版本绑死；重跑 export 更贵）。
+### Deploy Pages
 
-### 2. Deploy Pages（中轻，常跑）
+`print-versions` → 拉 React 站点包 → optimize bundle → 部署 `site/`。
 
-`workflow_run`：下载当次 Export **artifact** 并解压；其它触发：`gh` 拉最近一次 Export **artifact** → **optimize** → 写入 `site/bundles/` → 部署 `site/`。
-
-触发：
-
-- Export 成功后 `workflow_run`
-- push `site/**`、`ci/**`、`scripts/**` 等（见 workflow `paths`）
-- 手动 Run workflow（可指定 `optimize_version` / `renderer_version`）
-
-| 变更类型 | 需要跑的 workflow |
-|---------|-------------------|
-| 只改 `site/js/`、`site/styles.css` | **Deploy Pages**（拉 Export artifact，重跑 optimize） |
-| 只升 `OPTIMIZE_VERSION` / prune 规则 | **Deploy Pages**（不必重导 MC） |
-| 只升 `RENDERER_VERSION` | **Deploy Pages** |
-| modpack / MWE 导出 / 新配方数据 | **Export EMI bundle**（再 Deploy） |
-
-**注意**：Deploy **从不**读取 `emi-raw-*` Actions cache。手动 Deploy 前需有一次成功的 Export（保留 `emi-raw-<bundle_id>` artifact）。
-
-## 路由
-
-全部使用 query 参数（`?bundle=tfg-0.12.8&lang=zh_cn` 等），适合 GitHub Pages。
+| 变更 | Workflow |
+|------|----------|
+| 新 modpack / 配方数据 | Export → Deploy |
+| 仅前端 / npm 工具升级 | Deploy（自动跟最新 Release） |
 
 ## 相关仓库
 
 | 仓库 | 角色 |
 |------|------|
-| minecraft-web-export | Forge 运行时 EMI 导出 |
-| emi-bundle-optimize | 离线 WebP / 语言裁剪 |
+| TFG-Recipe-Viewer-React | 前端 Release |
+| TFG-Recipe-Viewer-Vanilla | 旧静态站备份 |
+| minecraft-web-export | EMI 导出 |
+| emi-bundle-optimize | 离线优化 |
 | emi-recipe-renderer | 浏览器渲染 |

@@ -7,7 +7,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "postinstall": "mkdir -p site && cp language.json site/language.json",
+    "postinstall": "mkdir -p site/bundles",
+    "fetch-site": "bash scripts/ci.sh fetch-viewer-site",
+    "resolve-release": "bash scripts/ci/resolve-release-tag.sh",
     "sync-language": "mkdir -p site && cp language.json site/language.json",
     "dev:profile": "mkdir -p site/bundles && ln -sfn ../../minecraft-web-export/run/export/minecraft-web-export/emi site/bundles/dev-local",
     "copy": "node scripts/install-bundle.mjs copy",
@@ -15,7 +17,7 @@
     "optimize": "emi-bundle-optimize optimize",
     "serve": "npx serve -s site -l ${PORT:-8768}",
     "dev": "npm run dev:profile && npm run sync-language && npm run serve",
-    "start": "npm run sync-language && npm run validate && npm run serve"
+    "start": "test -f site/index.html || npm run fetch-site; npm run sync-language && npm run validate && npm run serve"
   },
   "dependencies": {
     "emi-bundle-optimize": "^0.4.4",

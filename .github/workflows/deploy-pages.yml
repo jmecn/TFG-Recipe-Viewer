@@ -4,7 +4,6 @@ on:
   push:
     branches: ["main", "master"]
     paths:
-      - "site/**"
       - "ci/**"
       - "package.json"
       - "package-lock.json"
@@ -12,20 +11,8 @@ on:
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
     inputs:
-      bundle_id:
-        description: Bundle id to deploy (empty = resolve from modpack tag / export artifact)
-        required: false
-        default: ""
       modpack_tag:
-        description: Modpack-Modern semver tag when resolving bundle id (empty = latest release)
-        required: false
-        default: ""
-      renderer_version:
-        description: emi-recipe-renderer npm version (empty = ci/build.env)
-        required: false
-        default: ""
-      optimize_version:
-        description: emi-bundle-optimize npm version (empty = ci/build.env)
+        description: Modpack 版本
         required: false
         default: ""
   workflow_run:
@@ -55,12 +42,20 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout viewer
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
       - name: Load CI config
         run: bash scripts/ci.sh load-config
+
+      - name: Resolve and print versions
+        env:
+          MODPACK_TAG: ${{ github.event.inputs.modpack_tag }}
+        run: bash scripts/ci.sh print-versions
+
+      - name: Fetch viewer site from React release
+        run: bash scripts/ci.sh fetch-viewer-site
 
       - name: Download export metadata
         if: github.event_name == 'workflow_run'
@@ -70,35 +65,24 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
-      - name: Resolve bundle id
+      - name: Resolve bundle
         id: metadata
-        env:
-          MODPACK_TAG: ${{ github.event.inputs.modpack_tag || env.MODPACK_TAG }}
         run: |
-          if [ -n "${{ github.event.inputs.bundle_id }}" ]; then
-            echo "bundle_id=${{ github.event.inputs.bundle_id }}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           if [ -f export-meta/bundle-id ]; then
             echo "bundle_id=$(cat export-meta/bundle-id)" >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            echo "bundle_id=tfg-${MODPACK_TAG}" >> "$GITHUB_OUTPUT"
           fi
-          bash scripts/ci.sh resolve-bundle-id
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: package-lock.json
 
       - name: Prep Node
-        env:
-          RENDERER_VER: ${{ github.event.inputs.renderer_version || env.RENDERER_VERSION }}
-          OPTIMIZE_VER: ${{ github.event.inputs.optimize_version || env.OPTIMIZE_VERSION }}
         run: bash scripts/ci.sh prep-node
-
-      # Raw bundle: Export artifact only (no actions/cache restore — stale schema-1 caches are ignored).
 
       - name: Download raw bundle artifact from triggering Export
         if: github.event_name == 'workflow_run'

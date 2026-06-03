@@ -3,16 +3,8 @@ name: Export EMI bundle
 on:
   workflow_dispatch:
     inputs:
-      mwe_version:
-        description: minecraft-web-export release tag (empty = ci/build.env)
-        required: false
-        default: ""
       modpack_tag:
-        description: Modpack-Modern semver tag (empty = latest release)
-        required: false
-        default: ""
-      export_warmup_ticks:
-        description: Ticks after EMI is ready before export (empty = ci/build.env)
+        description: Modpack 版本
         required: false
         default: ""
 
@@ -31,30 +23,30 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout viewer
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
       - name: Load CI config
         run: bash scripts/ci.sh load-config
 
+      - name: Resolve and print versions
+        env:
+          MODPACK_TAG: ${{ github.event.inputs.modpack_tag }}
+        run: bash scripts/ci.sh print-versions
+
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: package-lock.json
 
       - name: Prep Node (validate CLI only)
-        env:
-          OPTIMIZE_VER: ${{ env.OPTIMIZE_VERSION }}
-          RENDERER_VER: ${{ env.RENDERER_VERSION }}
         run: bash scripts/ci.sh prep-node
 
       - name: Checkout Modpack-Modern
         id: modpack
-        env:
-          MODPACK_TAG: ${{ github.event.inputs.modpack_tag || env.MODPACK_TAG }}
         run: bash scripts/ci.sh checkout-modpack
 
       - name: Prepare bundle metadata
@@ -82,11 +74,7 @@ jobs:
 
       - name: Install minecraft-web-export
         id: mwe
-        env:
-          MWE_TAG: ${{ github.event.inputs.mwe_version || env.MWE_VERSION }}
-        run: |
-          bash scripts/ci.sh install-mwe
-          echo "tag=${MWE_TAG}" >> "$GITHUB_OUTPUT"
+        run: bash scripts/ci.sh install-mwe
 
       - name: Resolve export languages
         id: export_languages
