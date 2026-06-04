@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       modpack_tag:
-        description: Modpack 版本
+        description: Modpack Release Tag
         required: false
         default: ""
 
