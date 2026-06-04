@@ -159,6 +159,8 @@ cmd_prep_deploy_site() {
   fi
 
   cd "$ROOT"
+  cp "$ROOT/language.json" "$ROOT/site/language.json"
+  echo "Synced language.json → site/language.json (export + viewer locale list)"
   npm run copy -- --id "$bundle_id" "$bundle_root"
   npm run validate
   if ! compgen -G "site/assets/*.js" > /dev/null; then

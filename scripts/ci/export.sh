@@ -10,6 +10,7 @@ source "$CI_DIR/lib/env.sh"
 # shellcheck source=lib/bundle.sh
 source "$CI_DIR/lib/bundle.sh"
 
+# enabledLocales in language.json — align with Field-Guide-Modern Language.java
 resolve_export_languages() {
   local lang_cfg="$ROOT/language.json"
   if [[ ! -f "$lang_cfg" ]]; then
@@ -20,7 +21,7 @@ resolve_export_languages() {
 const fs=require('fs');
 const cfg=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));
 const arr=Array.isArray(cfg.enabledLocales)?cfg.enabledLocales:[];
-const norm=[...new Set(arr.map(s=>String(s||'').trim().toLowerCase().replace('-','_')).filter(Boolean))];
+const norm=[...new Set(arr.map(s=>String(s||'').trim().toLowerCase().replace(/-/g,'_')).filter(Boolean))];
 process.stdout.write((norm.length?norm:['en_us','zh_cn']).join(','));
 " "$lang_cfg"
 }
