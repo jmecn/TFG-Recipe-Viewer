@@ -4,7 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       modpack_tag:
-        description: Modpack Release Tag
+        description: Modpack-Modern release tag
+        required: false
+        default: ""
+      mwe_version:
+        description: minecraft-web-export release tag
+        required: false
+        default: ""
+      export_warmup_ticks:
+        description: Ticks after EMI ready before export
         required: false
         default: ""
 
@@ -12,8 +20,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: export-bundle
-  cancel-in-progress: false
+  group: export-bundle-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   export:
@@ -22,65 +30,42 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout viewer
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Load CI config
-        run: bash scripts/ci.sh load-config
-
-      - name: Resolve and print versions
+      - name: Prepare export
+        id: metadata
         env:
-          MODPACK_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.modpack_tag || '' }}
-        run: bash scripts/ci.sh print-versions
+          MODPACK_TAG: ${{ github.event.inputs.modpack_tag }}
+          MWE_TAG: ${{ github.event.inputs.mwe_version }}
+        run: bash ci/run.sh prepare-export
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Prep Node (validate CLI only)
-        run: bash scripts/ci.sh prep-node
+      - name: Prep Node
+        run: bash ci/run.sh prep-node
 
-      - name: Checkout Modpack-Modern
-        id: modpack
-        run: bash scripts/ci.sh checkout-modpack
+      - name: Export languages
+        id: export_languages
+        run: bash ci/run.sh export-languages
 
-      - name: Prepare bundle metadata
-        id: metadata
-        env:
-          MODPACK_TAG: ${{ steps.modpack.outputs.modpack_tag }}
-        run: bash scripts/ci.sh prepare-metadata
-
-      - uses: actions/setup-java@v4
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: temurin
-
-      - name: Install xvfb + OpenGL + OpenAL Soft
-        run: |
-          sudo DEBIAN_FRONTEND=noninteractive apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            xvfb x11-xserver-utils \
-            libgl1 libgl1-mesa-dri \
-            libopenal1
-
-      - name: Fetch modpack mods (pakku)
+      - name: Fetch mods
         working-directory: ${{ env.MODPACK_DIR }}
         run: java -jar pakku.jar fetch
 
-      - name: Install minecraft-web-export
-        id: mwe
-        run: bash scripts/ci.sh install-mwe
-
-      - name: Resolve export languages
-        id: export_languages
-        run: bash scripts/ci.sh resolve-export-languages
-
-      - name: Restore HeadlessMC .minecraft
+      - name: Restore HMC cache
         id: hmc-restore
         uses: actions/cache/restore@v4
         with:
@@ -90,22 +75,21 @@ jobs:
             hmc-${{ env.MC_VERSION }}-forge-
             hmc-${{ env.MC_VERSION }}-
 
-      - name: Restore emi-export save
-        id: emi-save-restore
+      - name: Restore world cache
+        id: world-restore
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.MODPACK_DIR }}/saves/emi-export
           key: emi-export-${{ env.MC_VERSION }}-${{ hashFiles(format('{0}/pakku-lock.json', env.MODPACK_DIR)) }}
-          restore-keys: |
-            emi-export-${{ env.MC_VERSION }}-
+          restore-keys: emi-export-${{ env.MC_VERSION }}-
 
-      - name: Setup HeadlessMC
-        run: bash scripts/ci.sh setup-hmc
+      - name: Prepare game
+        run: bash ci/run.sh prepare-game
 
-      - name: Launch modpack and verify EMI export
+      - name: Run export
         env:
           ALSOFT_DRIVERS: "null"
-          # Do not reference step env vars via env.* inside this same env block (GHA limitation).
+          EXPORT_WARMUP: ${{ github.event.inputs.export_warmup_ticks || env.EXPORT_WARMUP_TICKS }}
           MWE_JVM_FLAGS: >-
             -Xmx12G
             -Xms4G
@@ -115,64 +99,46 @@ jobs:
             -DminecraftWebExport.export.enabled=true
             -DminecraftWebExport.runExportAndExit=true
             -DminecraftWebExport.export.outputDir=${{ env.EXPORT_RAW }}
-            -DminecraftWebExport.exportWarmupTicks=${{ github.event.inputs.export_warmup_ticks || env.EXPORT_WARMUP_TICKS }}
+            -DminecraftWebExport.exportWarmupTicks=${{ env.EXPORT_WARMUP }}
             -DminecraftWebExport.exportTimeoutSeconds=${{ env.EXPORT_TIMEOUT_SECONDS }}
             -DminecraftWebExport.exportLanguages=${{ steps.export_languages.outputs.export_languages }}
-        run: bash scripts/ci.sh launch-mc-export
+        run: bash ci/run.sh launch-export
 
-      - name: Save emi-export world cache
-        if: success() && steps.emi-save-restore.outputs.cache-hit != 'true'
+      - name: Save world cache
+        if: success() && steps.world-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.MODPACK_DIR }}/saves/emi-export
-          key: ${{ steps.emi-save-restore.outputs.cache-primary-key }}
+          key: ${{ steps.world-restore.outputs.cache-primary-key }}
 
-      - name: Save HeadlessMC .minecraft
+      - name: Save HMC cache
         if: success() && steps.hmc-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.RUNNER_HOME }}/.minecraft
           key: ${{ steps.hmc-restore.outputs.cache-primary-key }}
 
-      # Raw bundle is published via artifact below (not Actions cache — cache/save can fail with
-      # "Unable to reserve cache" while the job still succeeds; Deploy must not rely on it).
-
-      - name: Log exported bundle.json
-        run: |
-          node -e "const b=require(process.argv[1]); console.log('bundle.json schema', b.schema, 'imageScale', b.imageScale)" "${{ env.EXPORT_BUNDLE }}/bundle.json"
-
-      - name: Write export metadata
+      - name: Package export
         env:
           BUNDLE_ID: ${{ steps.metadata.outputs.bundle_id }}
-          MODPACK_TAG: ${{ steps.modpack.outputs.modpack_tag }}
-        run: bash scripts/ci.sh write-export-meta
+          MODPACK_TAG: ${{ steps.metadata.outputs.modpack_tag }}
+        run: bash ci/run.sh finalize-export
 
-      - name: Upload export metadata
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: export-meta
-          path: export-meta/
+          name: ${{ env.EXPORT_ARTIFACT_NAME }}
+          path: |
+            export-meta/
+            emi-raw-${{ steps.metadata.outputs.bundle_id }}.tar.gz
           retention-days: 90
-
-      - name: Tar raw export
-        run: |
-          ARCHIVE="emi-raw-${{ steps.metadata.outputs.bundle_id }}.tar.gz"
-          tar -czf "$ARCHIVE" -C "${{ env.EXPORT_RAW }}" "${{ env.EXPORT_BUNDLE_SUBDIR }}"
-          ls -lh "$ARCHIVE"
-
-      - name: Upload raw export
-        uses: actions/upload-artifact@v4
-        with:
-          name: emi-raw-${{ steps.metadata.outputs.bundle_id }}
-          path: emi-raw-${{ steps.metadata.outputs.bundle_id }}.tar.gz
-          retention-days: 30
           compression-level: 0
 
-      - name: Build debug — collect
+      - name: Collect debug
         if: failure()
-        run: bash scripts/ci.sh collect-export-debug --phase export
+        run: bash ci/run.sh collect-export-debug
 
-      - name: Build debug — upload
+      - name: Upload debug
         if: failure()
         uses: actions/upload-artifact@v4
         with:

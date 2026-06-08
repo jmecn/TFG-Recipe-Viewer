@@ -8,8 +8,8 @@
   },
   "scripts": {
     "postinstall": "mkdir -p site/bundles",
-    "fetch-site": "bash scripts/ci.sh fetch-viewer-site",
-    "resolve-release": "bash scripts/ci/resolve-release-tag.sh",
+    "fetch-site": "bash ci/run.sh fetch-viewer-site",
+    "resolve-release": "bash ci/run.sh resolve-release-tag",
     "sync-language": "mkdir -p site && cp language.json site/language.json",
     "dev:profile": "mkdir -p site/bundles && ln -sfn ../../minecraft-web-export/run/export/minecraft-web-export/emi site/bundles/dev-local",
     "copy": "node scripts/install-bundle.mjs copy",
